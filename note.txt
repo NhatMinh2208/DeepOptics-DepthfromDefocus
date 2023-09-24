@@ -1,0 +1,7 @@
+using different imageio library ?
+fix the dataset train, val
+why to calculate D, have to subtract r, d?
+
+CHange:
+__compute_loss -> compute_loss
+self.wavelengths = wavelengths.to(self.wavelengths.device)
