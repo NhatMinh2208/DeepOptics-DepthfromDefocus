@@ -1,5 +1,5 @@
 import torch, math
-from utils.cubicspline import interp
+from utils.interp import interp
 import torch.nn.functional as F
 import numpy as np
 from utils import complex 
@@ -66,13 +66,16 @@ def matting(depthmap, n_depths, binary, eps=1e-8):
 
 # a = torch.rand(3, 8)
 # b = torch.rand(3, 6, 6)
-def find_index(a, v):
-    a = a.squeeze(1).cpu().numpy()
-    v = v.cpu().numpy()
-    index = np.stack([np.searchsorted(a[i, :], v[i], side='left') - 1 for i in range(a.shape[0])], axis=0)
-    return torch.from_numpy(index)
-
+# def find_index(a, v):
+#     a = a.squeeze(1).cpu().numpy()
+#     v = v.cpu().numpy()
+#     index = np.stack([np.searchsorted(a[i, :], v[i], side='left') - 1 for i in range(a.shape[0])], axis=0)
+#     return torch.from_numpy(index)
+# a[0][0] = 0.1052
 # c = find_index(a, b)
+
+# print(a)
+# print( b)
 # print(c)
 # print(c.shape)
 
@@ -204,10 +207,119 @@ def compute_weighting_for_tapering(h):
 # roundtrip = torch.fft.irfft2(T, t.shape[-2:])
 # print(roundtrip.shape)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# psf = torch.rand((3, 3, 3)).to(device)
+# #jv1 = scipy.special.jv(1, psf)
+# jv2 = torch.special.bessel_j1(psf)
+# #print(jv1)
+# print(jv2)
 
-psf = torch.rand((3, 3, 3)).to(device)
-#jv1 = scipy.special.jv(1, psf)
-jv2 = torch.special.bessel_j1(psf)
-#print(jv1)
-print(jv2)
+
+# tensor2x2 = torch.rand((4, 4))
+# tensor2x2 = (tensor2x2 > 0.5).float()
+# tensor4x4 = F.interpolate(tensor2x2.unsqueeze(0).unsqueeze(0), size=(8, 8), mode='nearest').squeeze()
+# print(tensor2x2)
+# print(tensor2x2.shape)
+# print(tensor4x4)
+# print(tensor4x4.shape)
+
+# tensor = torch.ones((3, 4, 4))
+# tensor2 = torch.rand((4,4)) 
+# tensor3 = tensor * tensor2
+# print(tensor3)
+# print(tensor3.shape)
+
+# def to_sensor_phase(size, size1, wavelengths):
+#         x_prime = size * torch.arange(1, size).reshape(-1, 1, 1, 1)
+#         y_prime = size * torch.arange(1, size).reshape(1, -1, 1, 1)
+#         x = size * torch.arange(1, size1).reshape(1, 1, -1, 1)
+#         y = size * torch.arange(1, size1).reshape(1, 1, 1, -1)
+#         distance_diff = (x - x_prime) ** 2 + (y - y_prime) **2
+#         distance_diff = distance_diff.unsqueeze(0)
+#         z = 5
+#         k = (2 * math.pi) / wavelengths.reshape(-1, 1, 1, 1, 1)
+#         return k * distance_diff / (2 * z)
+
+# size = 5
+# size1 = 7
+# wavelengths = torch.rand([3])
+# sth = to_sensor_phase(size, size1, wavelengths)
+# print(sth)
+# print(sth.shape)
+
+# def find_index(a, v):
+#     a = a.squeeze(1).cpu().numpy()
+#     v = v.cpu().numpy()
+#     index = np.stack([np.searchsorted(a[i, :], v[i], side='left') - 1 for i in range(a.shape[0])], axis=0)
+#     return torch.from_numpy(index)
+
+# shape = 12
+# a = torch.rand(3, 5, 8)
+# wl = torch.rand(3)
+# b = math.sqrt(2) * (torch.arange(-1, 12 // 2 + 1, dtype=torch.double) + 0.5)
+# c1 = torch.arange(1, 12 // 2 + 1).reshape(-1, 1)
+# c2 = torch.arange(1, 12 // 2 + 1).reshape(1, -1)
+# print(torch.sqrt(c1 ** 2 + c2 ** 2))
+# # c = torch.sqrt(c1 ** 2 + c2 ** 2).unsqueeze(0) / wl.reshape(-1, 1, 1)
+# print(b)
+# # b = b.reshape(1, 1, -1) / wl.reshape(-1, 1, 1)
+# # b = b.squeeze(1)
+# b = b.unsqueeze(0)
+# c = torch.sqrt(c1 ** 2 + c2 ** 2).unsqueeze(0)
+# d = find_index(b,c)
+# print(d)
+# print(b.shape)
+# print(c.shape)
+# e = F.relu(interp(b, a, c, d).float())
+# print(e.shape)
+# e = e.reshape(3, 5, 12 // 2, 12 // 2)
+# print(e.shape)
+
+# Define the dimensions
+# A = 2
+# B = 3
+# C = 4
+# D = 5
+# E = 6
+# #torch.Size([3, 16, 1, 16])
+# #torch.Size([3, 1, 16, 82])
+# # Create tensors with shapes (A, B, C) and (B, C, D)
+# tensor1 = torch.randn(A, 1, C, D, E)
+# tensor2 = torch.randn(A, B, 1, C)
+
+# # Perform matrix multiplication
+# result = torch.matmul(tensor2, tensor1)
+
+# # Print the shape of the result tensor
+# print(result.shape)
+
+# torch.Size([32, 1, 1, 1])
+# torch.Size([1, 1, 31, 1])
+# torch.Size([1, 32, 32, 31, 31])
+# torch.Size([3, 1, 16])
+# torch.Size([3, 16, 16])
+# phase:
+# torch.Size([1, 16, 1, 32, 32])
+# in_camera_phase:
+# torch.Size([3, 1, 32, 32, 31, 31])
+# tensor = torch.randn(3, 3, 5, 5, 6, 6)
+# x = tensor.size(2) * tensor.size(3)
+# tensor = tensor.reshape(tensor.size(0), tensor.size(1), -1, tensor.size(4), tensor.size(5))
+# tensor = tensor.reshape(tensor.size(0), tensor.size(1), x, -1)
+# print(tensor.shape)
+
+# mask_size = 100
+# tensor = torch.arange(1, mask_size)
+# print(tensor.shape)
+
+
+f_number = 6.3
+focal_length = 50e-3
+focal_depth = 1.7
+s = 1. / (1. / focal_length - 1. / focal_depth)
+condition = 0.0001
+pixel_pitch = 6.45e-6
+
+sth = math.sqrt(condition * 4 / f_number) * s / pixel_pitch
+
+print(sth)

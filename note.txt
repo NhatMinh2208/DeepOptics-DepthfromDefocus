@@ -1,7 +1,22 @@
 using different imageio library ?
 fix the dataset train, val
 why to calculate D, have to subtract r, d?
+why integral -> riemann sum
 
 CHange:
 __compute_loss -> compute_loss
 self.wavelengths = wavelengths.to(self.wavelengths.device)
+mask_size: 8000 -> 1000
+r_grid = math.sqrt(2) * self.mask_pitch * (
+                torch.arange(-1, self.mask_size // 2 + 1, dtype=torch.double) + 0.5) - >  torch.arange(1,... )
+
+gpu -> cpu
+img_size : 256 -> 32
+self.full_size = [32, 32]
+mask_upsample_factor', type=int, default=10 -> 1
+x_prime = self.mask_pitch * torch.arange(1, self.mask_size + 1).reshape(-1, 1, 1, 1)
+init_heightmap1d = torch.zeros(self.full_size[0] // 2 // mask_upsample_factor)  # 1D half size (radius)
+self.heightmap1d_ = torch.nn.Parameter(init_heightmap1d, requires_grad=requires_grad)
+
+
+the constant term outside the intergal???

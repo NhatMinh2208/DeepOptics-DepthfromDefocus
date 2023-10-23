@@ -7,6 +7,7 @@ from models.model import DepthEstimator
 from torch.utils.tensorboard import SummaryWriter
 from utils.helper import crop_boundary, gray_to_rgb, imresize, linear_to_srgb, srgb_to_linear, to_bayer
 
+
 writer = SummaryWriter(comment='_' + 'train')
 
 def arg_parser() -> argparse.ArgumentParser:
@@ -55,7 +56,7 @@ def arg_parser() -> argparse.ArgumentParser:
 
     # optics parameters
     parser.add_argument('--camera_type', type=str, default='mixed')
-    parser.add_argument('--mask_sz', type=int, default=8000)
+    parser.add_argument('--mask_sz', type=int, default=2048)
     parser.add_argument('--focal_length', type=float, default=50e-3)
     parser.add_argument('--focal_depth', type=float, default=1.7)
     parser.add_argument('--f_number', type=float, default=6.3)
@@ -63,7 +64,7 @@ def arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--noise_sigma_min', type=float, default=0.001)
     parser.add_argument('--noise_sigma_max', type=float, default=0.005)
     parser.add_argument('--full_size', type=int, default=1920)
-    parser.add_argument('--mask_upsample_factor', type=int, default=10)
+    parser.add_argument('--mask_upsample_factor', type=int, default=1)
     parser.add_argument('--diffraction_efficiency', type=float, default=0.7)
 
     parser.add_argument('--bayer', dest='bayer', action='store_true')
@@ -212,6 +213,7 @@ def training_step(model, device, data_loader, optimizer, args):
 
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cpu")
     print(f'Using device: {device}')
     if torch.cuda.is_available():
         print(f'Num GPUs: {torch.cuda.device_count()}')
@@ -219,16 +221,27 @@ if __name__ == '__main__':
     # parse command line
     parser = arg_parser()
     args = parser.parse_args()
-    data_loader = prepare_data(args)
+    #data_loader = prepare_data(args)
 
     model = DepthEstimator(args).to(device)
     optimizer = model.configure_optimizers()
+
+    target_images = torch.rand([1, 3, 384, 384]).to(device)
+    target_depthmaps =  torch.rand([1, 1, 384, 384]).to(device)
+    depth_conf = torch.ones([1, 1, 384, 384]).to(device)
+    result = model(target_images, target_depthmaps)
+    print(result)
     # for train_batch in data_loader:
     #     target_images = train_batch['image'].to(device)
     #     target_depthmaps = train_batch['depthmap'].to(device)
     #     depth_conf = train_batch['depth_conf'].to(device)
     #     result = model(target_images, target_depthmaps)
     #     print(result)
-
-    for epoch in range(5):
-        training_step(model, device, data_loader, optimizer, args)
+    #     print("image: ")
+    #     print(target_images)
+    #     print("depth: ")
+    #     print(target_depthmaps) 
+    #     print("conf: ")
+    #     print(depth_conf) 
+    # for epoch in range(5):
+    #     training_step(model, device, data_loader, optimizer, args)
