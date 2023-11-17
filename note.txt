@@ -20,3 +20,18 @@ self.heightmap1d_ = torch.nn.Parameter(init_heightmap1d, requires_grad=requires_
 
 
 the constant term outside the intergal???
+
+
+
+how to crop imageio
+crop h?
+
+#self.heightmap1d_ = torch.nn.Parameter(init_heightmap1d, requires_grad=requires_grad)
+
+
+
+change:
+img_size = 256  -> 512
+#in_camera_phase = self.to_sensor_phase_(355)  -> 200
+mask : 64 -> 128
+focal_length 50e-3 -> 100e-3

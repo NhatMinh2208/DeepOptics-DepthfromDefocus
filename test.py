@@ -317,9 +317,27 @@ f_number = 6.3
 focal_length = 50e-3
 focal_depth = 1.7
 s = 1. / (1. / focal_length - 1. / focal_depth)
-condition = 0.0001
+condition = 0.01
 pixel_pitch = 6.45e-6
 
 sth = math.sqrt(condition * 4 / f_number) * s / pixel_pitch
 
 print(sth)
+
+img_size = 256 + 32 * 4
+#pixel_pitch = 6.45e-6
+image_length = img_size * pixel_pitch
+mask_size = 256
+mask_diameter = focal_length / f_number
+mask_length = mask_size * mask_diameter
+print("image_length: ")
+print(image_length)   #0.0024768
+print("mask_length: ")
+print(mask_diameter)  #0.007936507936507938
+print("mask_pitch: ") #0.000031001984126984
+print(mask_diameter / mask_size)
+print("sensor2camera") #0.05151515151515152
+print("wave_length")  #[632e-9, 550e-9, 450e-9]
+print("mask_init_size") #3.87e-05
+print(image_length / 64)
+print(3.87e-05 * 64 / 384)

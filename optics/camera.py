@@ -8,6 +8,7 @@ import scipy.special
 import utils.helper
 from utils import complex, interp
 from utils.fft import fftshift
+import cv2
 class Camera(nn.Module, metaclass=abc.ABCMeta):
     def __init__(self, focal_depth, min_depth, max_depth, n_depths, image_size, mask_size,
                  focal_length, mask_diameter, camera_pixel_pitch, wavelengths, mask_upsample_factor=1, diffraction_efficiency=0.7,
@@ -91,6 +92,9 @@ class Camera(nn.Module, metaclass=abc.ABCMeta):
             captured image: B x C x H x W
         """
         psf = self.psf_at_camera(size=img.shape[-2:], is_training=is_training).unsqueeze(0)  # add batch dimension
+        print("this_psf1: ")
+        print(psf.shape)
+
         psf = self.normalize_psf(psf)
         captimg, volume = self._capture_from_rgbd_with_psf_impl(img, depthmap, psf, occlusion)
         return captimg, volume, psf
@@ -356,7 +360,8 @@ class RotationallySymmetricCamera(Camera):
                  focal_length, mask_diameter, camera_pixel_pitch, wavelengths, mask_upsample_factor, diffraction_efficiency,
                  full_size, requires_grad)
         init_heightmap1d = torch.zeros(mask_size // 2 // mask_upsample_factor)  # 1D half size (radius)
-        self.heightmap1d_ = torch.nn.Parameter(init_heightmap1d, requires_grad=requires_grad)
+        #TOCHANGE
+        #self.heightmap1d_ = torch.nn.Parameter(init_heightmap1d, requires_grad=requires_grad)
 
     def build_camera(self):
         H, rho_grid, rho_sampling = self.precompute_H(self.image_size)
@@ -526,8 +531,21 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
                  focal_length, mask_diameter, camera_pixel_pitch, wavelengths, mask_upsample_factor, diffraction_efficiency,
                  full_size, requires_grad)
          #TOCHANGE
-        init_ampmask2d = torch.ones(8,8)
+        #init_ampmask2d = torch.ones(8,8)
+        #TOCHANGE
+        # init_ampmask2d = torch.zeros(64,64, dtype=torch.float32)
+        # init_ampmask2d[31,31] = float(1.0)
+
+
+        # init_ampmask2d = torch.ones(64,64, dtype=torch.float32)
+        # init_ampmask2d[0, 0] = float(0.0)
+
+        init_ampmask2d = self.copy_quadruple(self.circular_mask(64))
+        # init_ampmask2d = torch.zeros(64,64, dtype=torch.float32)
+        # init_ampmask2d[31,31] = float(1.0)
+        # init_ampmask2d[29,29] = float(1.0)
         self.ampmask2d = torch.nn.Parameter(init_ampmask2d, requires_grad=requires_grad)
+        self.heightmap1d_ = torch.zeros(mask_size // 2 // mask_upsample_factor).to(self.device)
 
     def build_camera(self):
         H, _, _ = self.precompute_H(self.image_size)
@@ -742,9 +760,9 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         """Perform all computations in double for better precision. Float computation fails."""
         prop_amplitude, prop_phase = self.pointsource_inputfield1d(scene_distances) # n_wl X D x r
         amplitude = prop_amplitude
-        #H = self.rescale2D(H, self.r_grid, self.r_sampling, self.r_ind, self.mask_diameter)
-        # H = H.unsqueeze(1)  # n_wl x 1 x H x W x n_rho
-        in_camera_phase = self.to_sensor_phase().unsqueeze(1) # n_wl x 1 x X x y
+    
+        #in_camera_phase = self.to_sensor_phase().unsqueeze(1) # n_wl x 1 x X x y
+        #in_camera_phase = self.to_sensor_phase_(63).unsqueeze(1) 
         wavelengths = self.wavelengths.reshape(-1, 1, 1).double()
         if modulate_phase:
             # heightmap size: (mask_size // 2 // mask_upsample_factor). In this case choose upscale factor = 1.
@@ -766,10 +784,35 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         phase = utils.helper.copy_quadruple(phase)
         amplitude = utils.helper.copy_quadruple(amplitude)
         mask2D = self._mask_upscale() # x X y  
+        #-------------------------->
+        #TOCHANGE
+        temp_phase_shape = phase.shape
+        temp_phase = self.test_phase_mask('./lensethickness_R=50.000000delay_for_wl0.000632_f=100.000000.tif') #self.test_phase_mask(temp_phase_shape[-2], temp_phase_shape[-1])
+        temp_phase = temp_phase.unsqueeze(0).expand(temp_phase_shape[0], -1, -1).unsqueeze(1)
+        print("temp_phase.shape: ")
+        print(temp_phase.shape)
+        #phase = torch.zeros_like(phase) # n_wl x D x X x Y
+        phase = temp_phase # n_wl x D x X x Y
+        amplitude = torch.ones_like(amplitude) # n_wl x D x X x Y
+        #<--------------------------
+
+        #-------------------------->
+        #TODUMP
+        self.dump_init_phase = phase # n_wl x D x X x Y
+        #self.dump_init_phase = F.interpolate(phase, size=(128, 128), mode='bilinear', align_corners=False)
+        self.dump_init_amplitude = amplitude # n_wl x D x X x Y
+        self.dump_mask2D = mask2D
+        #<--------------------------
+
         amplitude = amplitude * mask2D # n_wl x D x X x Y
         # phase = self.mask2pixel_size(phase) #n_wl x D x X x Y  (X, Y is pixel coordination)
-        # amplitude = self.mask2pixel_size(amplitude) #n_wl x D x X x Y     
- 
+        # amplitude = self.mask2pixel_size(amplitude) #n_wl x D x X x Y 
+
+        #-------------------------->    
+        #TODUMP
+        #self.dump_amplitude = amplitude
+        self.dump_amplitude = torch.ones(3, 16, 64,64, dtype=torch.float32)
+        #<--------------------------
         
         # phase = self.rescale2D(phase, self.r_grid, self.r_sampling, self.r_ind, self.mask_diameter) # desired: n_wl x D x x_prime x y_prime   
         # phase = self.rescale2D(phase, self.rho_grid, self.rho_sampling, self.ind) # desired: n_wl x D x x x y   
@@ -780,21 +823,89 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         # in_camera_phase = self.__reshaping(in_camera_phase)
         # phase = phase.reshape(phase.size(0), phase.size(1), phase.size(2), -1)
         # amplitude = amplitude.reshape(amplitude.size(0), amplitude.size(1), amplitude.size(2), -1)
-        print("amplitude: ")
-        print(amplitude)
+        # print("amplitude: ")
+        # print(amplitude)
 
+
+        #TOCHANGE
+        #in_camera_phase = self.to_sensor_phase_(355)
+        in_camera_phase = self.to_sensor_phase_(700)
+        new_size = amplitude.shape[-1] + in_camera_phase.shape[-1] - 1
+        # amplitude = self.__padding2size(amplitude, new_size)
+        # phase = self.__padding2size(phase, new_size)
+
+        #----------------------------------------
         phase_complex = torch.complex(amplitude * torch.cos(phase), amplitude * torch.sin(phase))
-        in_camera_phase_complex = torch.complex(torch.cos(in_camera_phase), torch.sin(in_camera_phase))
-        some_constant1 = ( (2 * math.pi) / self.wavelengths.reshape(-1, 1) ) / self.scene_distances.reshape(1, -1) # n_wl X D
-        some_constant1 = torch.complex(torch.cos(some_constant1), torch.sin(some_constant1))
-        some_constant2 = torch.complex(torch.zeros((self.wavelengths.shape[0], self.scene_distances.shape[0])).to(self.device) , self.wavelengths.reshape(-1, 1) * self.scene_distances.reshape(1, -1) ) # n_wl X D
-        in_camera_phase_complex = (some_constant1.unsqueeze(2).unsqueeze(3) / some_constant2.unsqueeze(2).unsqueeze(3)) * torch.complex(torch.cos(in_camera_phase), torch.sin(in_camera_phase))
+        phase_complex = self.__padding2size(phase_complex, new_size)
+        
+        
+        
+        # in_camera_phase_complex = torch.complex(torch.cos(in_camera_phase), torch.sin(in_camera_phase))
+        # some_constant1 = ( (2 * math.pi) / self.wavelengths.reshape(-1, 1) ) / self.scene_distances.reshape(1, -1) # n_wl X D
+        # some_constant1 = torch.complex(torch.cos(some_constant1), torch.sin(some_constant1))
+        # some_constant2 = torch.complex(torch.zeros((self.wavelengths.shape[0], self.scene_distances.shape[0])).to(self.device) , self.wavelengths.reshape(-1, 1) * self.scene_distances.reshape(1, -1) ) # n_wl X D
+        # in_camera_phase_complex = (some_constant1.unsqueeze(2).unsqueeze(3) / some_constant2.unsqueeze(2).unsqueeze(3)) * torch.complex(torch.cos(in_camera_phase), torch.sin(in_camera_phase))
+        
+        # in_camera_phase = self.__padding2size(in_camera_phase, new_size) 
+        in_camera_phase_complex = torch.complex(torch.cos(in_camera_phase), torch.sin(in_camera_phase)).unsqueeze(0) # x,y
+        in_camera_phase_complex = in_camera_phase_complex / self.wavelengths.reshape(-1, 1, 1)  # n_wl , x, y
+        self.dump_h_prepad = in_camera_phase_complex
+        
+        in_camera_phase_complex = self.__padding2size(in_camera_phase_complex, new_size) 
+       
+       
+        # print("in_camera_phase_complex.real: ")
+        # print(in_camera_phase_complex.real)
+        # print("in_camera_phase_complex_0: ")
+        # print(in_camera_phase_complex.shape)
+        in_camera_phase_complex = in_camera_phase_complex.squeeze(0).unsqueeze(1)
+        #-----------------------------------------
         # print("\nphase_complex: ")
         # print(phase_complex.shape)
         # print("\nin_camera_phase_complex: ")
         # print(in_camera_phase_complex.shape)
-        conv = torch.fft.ifft2(torch.fft.fft2(phase_complex) * torch.fft.fft2(in_camera_phase_complex), phase.shape[-2:])  # n_wl X D X x X y (x,y: complex number)
-        print(conv.shape)
+        # print("phase_complex: ")
+        # print(phase_complex.shape)
+        # print("in_camera_phase_complex: ")
+        # print(in_camera_phase_complex.shape)
+
+        #-------------------------->    
+        #TODUMP
+        self.dump_phase_complex = phase_complex
+        self.dump_h = in_camera_phase_complex
+        #<--------------------------
+
+        # print("in_camera_phase_complex.real2: ")
+        # print(self.h.real)
+        # conv = torch.fft.ifft2(torch.fft.fft2(phase_complex) * torch.fft.fft2(in_camera_phase_complex), phase.shape[-2:])  # n_wl X D X x X y (x,y: complex number)
+        #conv = torch.fft.ifft2(torch.fft.fft2(phase_complex) * torch.fft.fft2(in_camera_phase_complex), phase_complex.real.shape[-2:])
+        
+        #TODUMP
+        self.dump_phase_complex_fft = torch.fft.fft2(phase_complex)
+        self.dump_h_complex_fft = torch.fft.fft2(in_camera_phase_complex)
+        self.dump_spectrum_conv = torch.fft.fft2(phase_complex) * torch.fft.fft2(in_camera_phase_complex)
+        # self.dump_spectrum_conv = self.dump_spectrum_conv[..., 350:-1, 350:-1]
+        print(new_size)
+        print(new_size / 2 - 384 / 2)
+        print(new_size / 2 + 384 / 2)
+        # print("dump_spectrum_conv")
+        # print(self.dump_spectrum_conv.shape)
+        # print("dump_h")
+        # print(self.dump_h.shape)
+        # print(new_size)
+        #conv = torch.fft.ifft2(torch.fft.fft2(phase_complex) * torch.fft.fft2(in_camera_phase_complex))
+        conv = torch.fft.ifft2(self.dump_spectrum_conv)
+        #conv = torch.fft.ifft2(utils.helper.copy_quadruple(torch.fft.fft2(phase_complex) * torch.fft.fft2(in_camera_phase_complex)))
+        # x_ = self.__padding2size(torch.fft.fft2(phase_complex), new_size)
+        # y_ = self.__padding2size(torch.fft.fft2(in_camera_phase_complex), new_size)
+        # conv = torch.fft.ifft2(x_ * y_)
+        
+        
+        # print("phase.shape: ")
+        # print(phase.shape)
+        # print("phase_complex.real: ")
+        # print(phase_complex.real.shape)
+        # print(conv.shape)
         # print("phase_complex: ")
         # print(phase_complex)
         # print("in_camera_phase_complex: ")
@@ -804,12 +915,19 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         # imag = torch.matmul(amplitude * torch.sin(phase), torch.cos(in_camera_phase)).squeeze(-2)
         # + torch.matmul(amplitude * torch.cos(phase), torch.sin(in_camera_phase)).squeeze(-2)  # n_wl X D X x X y
         # print(real.shape)
+        #-------------------------->    
+        #TODUMP
+        self.dump_conv_real = conv.real
+        self.dump_conv_imag = conv.imag
+        #<--------------------------
         return (conv.real ** 2 + conv.imag ** 2)  # n_wl X D X x X y
     
     def _psf_at_camera_impl(self, H, rho_grid, rho_sampling, ind, size, scene_distances, modulate_phase):
         # As this quadruple will be copied to the other three, rho = 0 is avoided.
         psf1d = self.psf1d(scene_distances, modulate_phase).float()
-        # print(psf1d)
+        psf1d = psf1d[..., :self.image_size[0], :self.image_size[1]]
+        # print("this_psf: ")
+        # print(psf1d.shape)
         return psf1d # wl x depth x size x size
 
     def to_sensor_phase(self):
@@ -822,16 +940,216 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         # distance_diff = (x - x_prime) ** 2 + (y - y_prime) **2
         distance_diff = x ** 2 + y ** 2
         distance_diff = distance_diff.unsqueeze(0).to(self.device)
-        print( distance_diff.shape)
+        # print( distance_diff.shape)
         z = self.sensor_distance()
         k = (2 * math.pi) / self.wavelengths.reshape(-1, 1, 1).double()
         return k * distance_diff / (2 * z)
     
-    def __reshaping(self, tensor):
-        temp = tensor.size(2) * tensor.size(3)
-        tensor = tensor.reshape(tensor.size(0), tensor.size(1), -1, tensor.size(4), tensor.size(5))
-        tensor = tensor.reshape(tensor.size(0), tensor.size(1), temp, -1)
-        return tensor
+    def to_sensor_phase_(self, h_size):
+        # x_prime = self.mask_pitch * torch.arange(1, self.mask_size + 1).reshape(-1, 1, 1, 1)
+        # y_prime = self.mask_pitch * torch.arange(1, self.mask_size + 1).reshape(1, -1, 1, 1)
+        # y = self.camera_pixel_pitch * torch.arange(1, h_size + 1).reshape(1, -1)
+        x = self.camera_pixel_pitch * torch.arange( - (h_size // 2), h_size // 2 + 1).reshape(-1, 1)
+        y = self.camera_pixel_pitch * torch.arange( - (h_size // 2), h_size // 2 + 1).reshape(1, -1)
+        # print(x_prime.shape)
+        # print(x.shape)
+        # distance_diff = (x - x_prime) ** 2 + (y - y_prime) **2
+        distance_diff = x ** 2 + y ** 2
+        distance_diff = distance_diff.unsqueeze(0).to(self.device)
+        # print( distance_diff.shape)
+        z = self.sensor_distance()
+        k = (2 * math.pi) / self.wavelengths.reshape(-1, 1, 1).double()
+        return k * distance_diff / (2 * z)
+
+    def __padding2size(self, tensor, new_size):
+        x_padding = (new_size - tensor.shape[-1]) 
+        # Pad the original tensor to the new size
+        # return torch.nn.functional.pad(tensor, (0, x_padding, 0, x_padding), mode='constant', value=0)
+        real = torch.nn.functional.pad(tensor.real, (0, x_padding, 0, x_padding), mode='constant', value=0)
+        imag = torch.nn.functional.pad(tensor.imag, (0, x_padding, 0, x_padding), mode='constant', value=0)
+        return torch.complex(real, imag)
+
+    def _capture_impl(self, volume, layered_depth, psf, occlusion, eps=1e-3):
+        scale = volume.max()
+        volume = volume / scale   # (B, 3, D, H, W)
+        #Fpsf = torch.rfft(psf, 2)
+        Fpsf = torch.view_as_real(torch.fft.rfft2(psf))
+        # print("fpsf: ")
+        # print(Fpsf.shape)
+        # print("layered_depth: ")
+        # print(layered_depth.shape)
+        if occlusion:
+            #Fvolume = torch.rfft(volume, 2)
+            Fvolume = torch.view_as_real(torch.fft.rfft2(volume))
+            #Flayered_depth = torch.rfft(layered_depth, 2)
+            Flayered_depth = torch.view_as_real(torch.fft.rfft2(layered_depth))
+            # blurred_alpha_rgb = torch.irfft(
+            #     complex.multiply(Flayered_depth, Fpsf), 2, signal_sizes=volume.shape[-2:])
+            # blurred_volume = torch.irfft(
+            #     complex.multiply(Fvolume, Fpsf), 2, signal_sizes=volume.shape[-2:])
+            blurred_alpha_rgb = torch.fft.irfft2(torch.view_as_complex(complex.multiply(Flayered_depth, Fpsf)), volume.shape[-2:])
+            blurred_volume = torch.fft.irfft2(torch.view_as_complex(complex.multiply(Fvolume, Fpsf)), volume.shape[-2:])
+            # Normalize the blurred intensity
+            cumsum_alpha = torch.flip(torch.cumsum(torch.flip(layered_depth, dims=(-3,)), dim=-3), dims=(-3,))
+            #Fcumsum_alpha = torch.rfft(cumsum_alpha, 2)
+            Fcumsum_alpha = torch.view_as_real(torch.fft.rfft2(cumsum_alpha))
+            # blurred_cumsum_alpha = torch.irfft(
+            #     complex.multiply(Fcumsum_alpha, Fpsf), 2, signal_sizes=volume.shape[-2:])
+            blurred_cumsum_alpha = torch.fft.irfft2(torch.view_as_complex(complex.multiply(Fcumsum_alpha, Fpsf)), volume.shape[-2:])
+            blurred_volume = blurred_volume / (blurred_cumsum_alpha + eps)
+            blurred_alpha_rgb = blurred_alpha_rgb / (blurred_cumsum_alpha + eps)
+
+            over_alpha = utils.helper.over_op(blurred_alpha_rgb)
+            captimg = torch.sum(over_alpha * blurred_volume, dim=-3)
+        else:
+            #Fvolume = torch.rfft(volume, 2)
+            Fvolume = torch.view_as_real(torch.fft.rfft2(volume))
+            Fcaptimg = complex.multiply(Fvolume, Fpsf).sum(dim=2)
+            #captimg = torch.irfft(Fcaptimg, 2, signal_sizes=volume.shape[-2:])
+            captimg = torch.fft.irfft2(torch.view_as_complex(Fcaptimg), volume.shape[-2:])
+
+        captimg = scale * captimg
+        volume = scale * volume
+        return captimg, volume
+    
+    def get_psf(self, is_training = False):
+        device = self.device
+        if is_training:
+            scene_distances = utils.helper.ips_to_metric(
+                torch.linspace(0, 1, steps=self.n_depths, device=device) +
+                1 / self.n_depths * (torch.rand(self.n_depths, device=device) - 0.5),
+                self.min_depth, self.max_depth)
+            scene_distances[-1] += torch.rand(1, device=device)[0] * (100.0 - self.max_depth)
+        else:
+            scene_distances = utils.helper.ips_to_metric(torch.linspace(0, 1, steps=self.n_depths, device=device),
+                                            self.min_depth, self.max_depth)
+
+        #return self.psf1d(scene_distances, torch.tensor(True))
+        psf = self.psf1d(scene_distances, torch.tensor(True))
+        # print("in_camera_phase_complex.real3: ")
+        # print(self.h.real)
+        # print(self.h.real.shape)
+
+        return self.conv_imag
+    # def sensor_distance(self):
+    #     return 1.e-6
+    def get_mask_upsample(self):
+        return self._mask_upscale()
+    def get_h(self):
+        in_camera_phase = self.to_sensor_phase_(355)
+        in_camera_phase_complex = torch.complex(torch.cos(in_camera_phase), torch.sin(in_camera_phase)).unsqueeze(0) # x,y
+        in_camera_phase_complex = in_camera_phase_complex / self.wavelengths.reshape(-1, 1, 1)
+        # some_constant1 = ( (2 * math.pi) / self.wavelengths ) * self.sensor_distance() # n_wl
+        # some_constant1 = torch.complex(torch.cos(some_constant1), torch.sin(some_constant1))
+        # some_constant2 = torch.complex(torch.zeros(self.wavelengths.shape[0]).to(self.device) , self.wavelengths * self.sensor_distance() ) # n_wl
+        # in_camera_phase_complex = (some_constant1.unsqueeze(1).unsqueeze(2) / some_constant2.unsqueeze(1).unsqueeze(2)) * torch.complex(torch.cos(in_camera_phase), torch.sin(in_camera_phase))
+        # print(in_camera_phase_complex.real.shape)
+        return in_camera_phase_complex.imag.squeeze(0)
+    def get_amplitude_mask(self, is_training = False):
+        device = self.device
+        if is_training:
+            scene_distances = utils.helper.ips_to_metric(
+                torch.linspace(0, 1, steps=self.n_depths, device=device) +
+                1 / self.n_depths * (torch.rand(self.n_depths, device=device) - 0.5),
+                self.min_depth, self.max_depth)
+            scene_distances[-1] += torch.rand(1, device=device)[0] * (100.0 - self.max_depth)
+        else:
+            scene_distances = utils.helper.ips_to_metric(torch.linspace(0, 1, steps=self.n_depths, device=device),
+                                            self.min_depth, self.max_depth)
+        prop_amplitude, prop_phase = self.pointsource_inputfield1d(scene_distances) # n_wl X D x r
+        amplitude = prop_amplitude
+        amplitude = self.mask2sensor_scale(amplitude) # n_wl x D x n_rho
+        amplitude = interp.linterp(self.rho_grid, amplitude, self.rho_sampling, self.rho_index)  # n_wl x D x X x Y
+        amplitude = utils.helper.copy_quadruple(amplitude)
+        # print("amplitude.shape: ")
+        # print(amplitude.shape)
+        amplitude = torch.ones_like(amplitude) # n_wl x D x n_rho
+        #<--------------------------
+
+
+        amplitude = amplitude * self._mask_upscale() # n_wl x 
+        return amplitude
+
+    def dump(self, is_training = False):
+        dictionary = {}
+        device = self.device
+        if is_training:
+            scene_distances = utils.helper.ips_to_metric(
+                torch.linspace(0, 1, steps=self.n_depths, device=device) +
+                1 / self.n_depths * (torch.rand(self.n_depths, device=device) - 0.5),
+                self.min_depth, self.max_depth)
+            scene_distances[-1] += torch.rand(1, device=device)[0] * (100.0 - self.max_depth)
+        else:
+            scene_distances = utils.helper.ips_to_metric(torch.linspace(0, 1, steps=self.n_depths, device=device),
+                                            self.min_depth, self.max_depth)
+
+        #return self.psf1d(scene_distances, torch.tensor(True))
+        psf = self.psf1d(scene_distances, torch.tensor(True))
+        
+        dictionary['init_phase'] = self.dump_init_phase[0, 0]  #real value
+        dictionary['init_amplitude'] = self.dump_init_amplitude[0, 0]   #real value
+        dictionary['mask2D'] = self.dump_mask2D  #real value
+        dictionary['amplitude'] = self.dump_amplitude[0, 0]   #real value 
+        dictionary['phase_complex'] = self.dump_phase_complex.real[0, 0] # complex value
+        dictionary['h'] = self.dump_h.real[0, 0]  # complex value
+        dictionary['h_magnitude'] = torch.log(1 + self.dump_h.real ** 2 + self.dump_h.imag ** 2)[0,0]
+        dictionary['phase_complex_fft'] = torch.log(1 + torch.sqrt(self.dump_phase_complex_fft.real[0, 0] ** 2 +  self.dump_phase_complex_fft.imag[0, 0] ** 2))
+        dictionary['h_complex_fft'] = torch.log(1 + torch.sqrt(self.dump_h_complex_fft.imag[0,0] ** 2 + self.dump_h_complex_fft.real[0,0] ** 2)) 
+        dictionary['spectrum_conv'] = torch.log(1 + torch.sqrt(self.dump_spectrum_conv.imag[0, 0] ** 2 + self.dump_spectrum_conv.real[0, 0] ** 2))
+        dictionary['conv_real'] = self.dump_conv_real[0, 0]  # complex value
+        dictionary['conv_imag'] = self.dump_conv_imag[0, 0]  # complex value
+        dictionary['abs_conv_real'] = torch.abs(self.dump_conv_real[0, 0])
+        #dictionary['psf'] = torch.log(1e16 + torch.sqrt(psf[0,0])) #real value
+        dictionary['psf'] = psf[0,0] #real value
+        dictionary['h_prepad'] = self.dump_h_prepad.real[0, 0] 
+        # in_camera_phase = self.to_sensor_phase_(783)
+        # in_camera_phase_complex = torch.complex(torch.cos(in_camera_phase), torch.sin(in_camera_phase)).unsqueeze(0) # x,y
+        # in_camera_phase_complex = in_camera_phase_complex / self.wavelengths.reshape(-1, 1, 1)  # n_wl , x, y
+
+        # dictionary['h_prepad'] = in_camera_phase_complex.real[0,0]
+        print("sensor2camera")
+        print(self.sensor_distance())
+        # print("in_camera_phase_complex.real3: ")
+        # print(self.h.real)
+        # print(self.h.real.shape)
+        return dictionary
+
+    def test_phase_mask(self, file : str):  #self, rows, cols
+        # x = torch.linspace(-1, 1, cols)
+        # y = torch.linspace(-1, 1, rows)
+        # x, y = torch.meshgrid(x, y)
+        # # Calculate the radial gradient from the center
+        # radius = torch.sqrt(x**2 + y**2)
+        # # Normalize the radius to the range [0, 1]
+        # radius = (radius - radius.min()) / (radius.max() - radius.min())
+        # # Invert the gradient so that values are smaller at the center and larger at the edges
+        # inverted_radius = 1 - radius
+        # # Clip the values to ensure they are within the range [0, 1]
+        # return inverted_radius.clamp(0, 1).to(self.device)
+
+        # read file tiff
+        im = cv2.imread(file, cv2.IMREAD_ANYDEPTH | cv2.IMREAD_GRAYSCALE)
+        # print("max img")
+        # print(im.max())
+        return torch.from_numpy(im).to(self.device)
+
+    def circular_mask(self, shape):
+        radius = shape // 2
+        Y, X = torch.meshgrid(torch.arange(radius), torch.arange(radius))
+        mask = (X)**2 + (Y)**2 <= (radius - 1)**2
+        return mask.float()
+
+    def copy_quadruple(self, x_rd):
+        x_ld = torch.flip(x_rd, dims=(-2,))
+        x_d = torch.cat([x_ld, x_rd], dim=-2)
+        x_u = torch.flip(x_d, dims=(-1,))
+        x = torch.cat([x_u, x_d], dim=-1)
+        return x
+    # def __reshaping(self, tensor):
+    #     temp = tensor.size(2) * tensor.size(3)
+    #     tensor = tensor.reshape(tensor.size(0), tensor.size(1), -1, tensor.size(4), tensor.size(5))
+    #     tensor = tensor.reshape(tensor.size(0), tensor.size(1), temp, -1)
+    #     return tensor
 
     # def _psf_at_camera_impl(self, H, rho_grid, rho_sampling, ind, size, modulate_phase):
     #     # As this quadruple will be copied to the other three, rho = 0 is avoided.

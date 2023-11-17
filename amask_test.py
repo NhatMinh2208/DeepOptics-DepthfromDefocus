@@ -14,5 +14,7 @@ def copy_quadruple(x_rd):
     x = torch.cat([x_u, x_d], dim=-1)
     return x
 
-tensor = torch.randn(8, 8)
-print(copy_quadruple(circular_mask(8)))
+tensor = torch.randn(64, 64)
+print(copy_quadruple(circular_mask(64)))
+
+
