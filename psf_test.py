@@ -37,7 +37,9 @@ def arg_parser() -> argparse.ArgumentParser:
     # dataset parameters
     parser.add_argument('--image_sz', type=int, default=256)
     parser.add_argument('--n_depths', type=int, default=16)
-    parser.add_argument('--min_depth', type=float, default=1.0)
+    #parser.add_argument('--min_depth', type=float, default=1.0)
+    parser.add_argument('--min_depth', type=float, default= 0.1)
+    #parser.add_argument('--max_depth', type=float, default=5.0)
     parser.add_argument('--max_depth', type=float, default=5.0)
     parser.add_argument('--crop_width', type=int, default=32)
 
@@ -51,10 +53,14 @@ def arg_parser() -> argparse.ArgumentParser:
 
     # optics parameters
     parser.add_argument('--camera_type', type=str, default='mixed')
-    parser.add_argument('--mask_sz', type=int, default=2048)
+    # parser.add_argument('--mask_sz', type=int, default=2048)
+    parser.add_argument('--mask_sz', type=int, default=256)
     #parser.add_argument('--focal_length', type=float, default=50e-3)
-    parser.add_argument('--focal_length', type=float, default=100e-3)
-    parser.add_argument('--focal_depth', type=float, default=1.7)
+    parser.add_argument('--focal_length', type=float, default=100e-3) #f
+    # parser.add_argument('--focal_depth', type=float, default=1.7)
+    # parser.add_argument('--focal_depth', type=float, default=1.7442)
+    parser.add_argument('--focal_depth', type=float, default=0.3) #d
+    # parser.add_argument('--focal_depth', type=float, default=1000000000.0)
     #parser.add_argument('--focal_depth', type=float, default= float('inf'))
     parser.add_argument('--f_number', type=float, default=6.3)
     parser.add_argument('--camera_pixel_pitch', type=float, default=6.45e-6)
@@ -117,6 +123,7 @@ cmap = LinearSegmentedColormap.from_list('custom', [(0, 'black'), (1, 'white')])
 parser = arg_parser()
 hparams = parser.parse_args()
 mask_diameter = hparams.focal_length / hparams.f_number
+#mask_diameter = 0.0024768
 wavelengths = [632e-9, 550e-9, 450e-9]
 camera_recipe = {
             'wavelengths': wavelengths,

@@ -341,3 +341,17 @@ print("wave_length")  #[632e-9, 550e-9, 450e-9]
 print("mask_init_size") #3.87e-05
 print(image_length / 64)
 print(3.87e-05 * 64 / 384)
+
+
+# sensor 
+# diameter: 0.0024768
+# resolution : 384
+# pitch : 6.45e-6
+
+# mask
+# diameter: 0.0024768
+# resolution : 256
+# pitch: 
+
+
+

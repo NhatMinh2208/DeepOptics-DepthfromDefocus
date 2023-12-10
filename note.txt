@@ -35,3 +35,33 @@ img_size = 256  -> 512
 #in_camera_phase = self.to_sensor_phase_(355)  -> 200
 mask : 64 -> 128
 focal_length 50e-3 -> 100e-3
+
+
+
+The mask and the sensor should have the same physical size (measure by metter) but can have different 
+resolution (Parameter)
+
+Test case:
+- zeros-phase mask + pinhole
+- fully-open circular amplitude mask + normal lens phase mask
+
+i currently use 3 different resolotion coordinates for amp mask, heightmap and sensor. All covert
+to sensor dim later for calculation
+
+khi ko co defocus factor,  gia su anh sacg toi lens la dong pha (song song vs nhau) -> gia su anh sach den tu infinity
+
+
+# infocus f = s, 
+          d khong phai vo cuc, 
+          z = f.
+
+
+
+# de bai: mask: length, res -> pitch
+          amp + phase mask: cung length, res co the khac nhau
+          sensor: length, res tuy y
+          sensor2mask_distance tuy y
+
+amp: learnable (2D)
+phase <- heightmap (2D)
+1D -> high_1D (cubic) -> high_2D (linear)
