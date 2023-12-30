@@ -46,6 +46,7 @@ class DepthEstimator(nn.Module):
         self.crop_width = hparams.crop_width
         mask_diameter = hparams.focal_length / hparams.f_number
         wavelengths = [632e-9, 550e-9, 450e-9]
+        real_image_size = hparams.image_sz + 4 * hparams.crop_width
         camera_recipe = {
             'wavelengths': wavelengths,
             'min_depth': hparams.min_depth,
@@ -53,9 +54,9 @@ class DepthEstimator(nn.Module):
             'focal_depth': hparams.focal_depth,
             'n_depths': hparams.n_depths,
             'image_size': hparams.image_sz + 4 * self.crop_width,
-            'camera_pixel_pitch': hparams.camera_pixel_pitch,
+            'camera_pixel_pitch': hparams.sensor_diameter / real_image_size,
             'focal_length': hparams.focal_length,
-            'mask_diameter': mask_diameter,
+            'mask_diameter': hparams.mask_diameter,
             'mask_size': hparams.mask_sz,
         }
         optimize_optics = hparams.optimize_optics
@@ -71,6 +72,37 @@ class DepthEstimator(nn.Module):
         self.depth_lossfn = torch.nn.L1Loss()
 
         print(self.camera)
+
+    # def __build_model2(self):
+    #     hparams = self.hparams
+    #     self.crop_width = hparams.crop_width
+    #     mask_diameter = hparams.focal_length / hparams.f_number
+    #     wavelengths = [632e-9, 550e-9, 450e-9]
+    #     camera_recipe = {
+    #         'wavelengths': wavelengths,
+    #         'min_depth': hparams.min_depth,
+    #         'max_depth': hparams.max_depth,
+    #         'focal_depth': hparams.focal_depth,
+    #         'n_depths': hparams.n_depths,
+    #         'image_size': hparams.image_sz + 4 * self.crop_width,
+    #         'camera_pixel_pitch': hparams.camera_pixel_pitch,
+    #         'focal_length': hparams.focal_length,
+    #         'mask_diameter': mask_diameter,
+    #         'mask_size': hparams.mask_sz,
+    #     }
+    #     optimize_optics = hparams.optimize_optics
+
+    #     camera_recipe['mask_upsample_factor'] = hparams.mask_upsample_factor
+    #     camera_recipe['diffraction_efficiency'] = hparams.diffraction_efficiency
+    #     camera_recipe['full_size'] = hparams.full_size
+    #     self.camera = AsymmetricMaskRotationallySymmetricCamera(**camera_recipe, requires_grad=optimize_optics)
+    #     self.decoder = CNN(hparams)
+    #     self.debayer = Debayer3x3()
+
+    #     self.image_lossfn = Vgg16PerceptualLoss()
+    #     self.depth_lossfn = torch.nn.L1Loss()
+
+    #     print(self.camera)
 
     def forward(self, images, depthmaps):
         # invert the gamma correction for sRGB image

@@ -57,7 +57,9 @@ khi ko co defocus factor,  gia su anh sacg toi lens la dong pha (song song vs nh
 
 
 
-# de bai: mask: length, res -> pitch
+# de bai: 
+          focal_length / f_number = mask_diameter (this feature currently inactive)
+          mask: diameter, res -> pitch
           amp + phase mask: cung length, res co the khac nhau
           sensor: length, res tuy y
           sensor2mask_distance tuy y
@@ -65,3 +67,15 @@ khi ko co defocus factor,  gia su anh sacg toi lens la dong pha (song song vs nh
 amp: learnable (2D)
 phase <- heightmap (2D)
 1D -> high_1D (cubic) -> high_2D (linear)
+
+our implementation focus on the mask length + res, it the important thing.
+Imagine everything after the mask, at a distance s, light is go through an
+infinity plane. The sensor length and res is only act like a tool to crop that.
+
+
+problem:
+divide depth level
+handle d = f
+
+change:
+mask_diameter: 2.4e-3 -> 5e-3

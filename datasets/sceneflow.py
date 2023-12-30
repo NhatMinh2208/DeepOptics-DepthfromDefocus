@@ -95,7 +95,8 @@ class SceneFlow(Dataset):
         #disparity = np.flip(imageio.imread(os.path.join(disparity_dir, f'{id}.pfm')), axis=0).astype(np.float32)
         #img = imageio.imread(os.path.join(image_dir, f'{id}.png')).astype(np.float32)
 
-        disparity = np.flip(IO.read(os.path.join(disparity_dir, f'{id}.pfm')), axis=0).astype(np.float32)
+        #disparity = np.flip(IO.read(os.path.join(disparity_dir, f'{id}.pfm')), axis=0).astype(np.float32)
+        disparity = IO.read(os.path.join(disparity_dir, f'{id}.pfm')).astype(np.float32)
         img = imageio.imread(os.path.join(image_dir, f'{id}.png')).astype(np.float32)
         img /= 255.  # Scale to [0, 1]
 

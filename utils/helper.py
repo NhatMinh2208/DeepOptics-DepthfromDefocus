@@ -147,3 +147,9 @@ def crop_boundary(x, w):
         return x
     else:
         return x[..., w:-w, w:-w]
+    
+def cosine_similarity_matrices(A, B):
+    A_flat = A.view(1, -1)  # Reshape A to a row tensor
+    B_flat = B.view(1, -1)  # Reshape B to a row tensor
+    cos_sim = F.cosine_similarity(A_flat, B_flat, dim=1)
+    return cos_sim.item()
