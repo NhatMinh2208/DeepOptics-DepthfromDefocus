@@ -56,7 +56,8 @@ class DepthEstimator(nn.Module):
             'image_size': hparams.image_sz + 4 * self.crop_width,
             'camera_pixel_pitch': hparams.sensor_diameter / real_image_size,
             'focal_length': hparams.focal_length,
-            'mask_diameter': hparams.mask_diameter,
+            #'mask_diameter': hparams.mask_diameter,
+            'mask_diameter': mask_diameter,
             'mask_size': hparams.mask_sz,
         }
         optimize_optics = hparams.optimize_optics

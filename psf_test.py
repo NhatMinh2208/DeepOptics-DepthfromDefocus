@@ -13,14 +13,15 @@ from PIL import Image
 
 import numpy as np
 import utils.IO as IO
+from utils.helper import crop_boundary, gray_to_rgb, imresize, linear_to_srgb, srgb_to_linear, to_bayer
 def arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Train a differentiable camera')
 
     # 
     parser.add_argument('--experiment_name', type=str, default='LearnedDepth')
     parser.add_argument('--mix_dualpixel_dataset', dest='mix_dual_pixel_dataset', action='store_true')
-    #parser.set_defaults(mix_dualpixel_dataset=True)
-    parser.set_defaults(mix_dualpixel_dataset=False)
+    parser.set_defaults(mix_dualpixel_dataset=True)
+    #parser.set_defaults(mix_dualpixel_dataset=False)
     # logger parameters
     parser.add_argument('--summary_max_images', type=int, default=4)
     parser.add_argument('--summary_image_sz', type=int, default=256)
@@ -76,16 +77,17 @@ def arg_parser() -> argparse.ArgumentParser:
     # physical length (meter)
     #parser.add_argument('--mask_diameter', type=float, default=2.4768e-3)
     # parser.add_argument('--mask_diameter', type=float, default=2.4768e-3)
-    parser.add_argument('--mask_diameter', type=float, default=5e-3)
+    #parser.add_argument('--mask_diameter', type=float, default=2.5e-3)
     parser.add_argument('--sensor_diameter', type=float, default=2.4768e-3)
     #parser.add_argument('--focal_length', type=float, default=50e-3)
-    parser.add_argument('--focal_length', type=float, default=100e-3) #f
+    #parser.add_argument('--focal_length', type=float, default=50e-3) #f
+    parser.add_argument('--focal_length', type=float, default=50e-3)
     # parser.add_argument('--focal_depth', type=float, default=1.7)
     # parser.add_argument('--focal_depth', type=float, default=1.7442)
     parser.add_argument('--focal_depth', type=float, default=5.) #d
     # parser.add_argument('--focal_depth', type=float, default=1000000000.0)
     #parser.add_argument('--focal_depth', type=float, default= float('inf'))
-    parser.add_argument('--f_number', type=float, default=6.3) #use to 
+    parser.add_argument('--f_number', type=float, default=20) #use to 
     #parser.add_argument('--camera_pixel_pitch', type=float, default=6.45e-6)
 
 
@@ -136,7 +138,11 @@ def dump_images(results: dict, output_dir, cmap):
         # Save the image as a file
         # plt.savefig(filename)
         # plt.close()
+        
+        # image = Image.fromarray(image.numpy())
+        # image = image.convert("L")
         imageio.imwrite(filename, image)
+        #imageio.imwrite(filename, image.to(torch.uint8))
 
 def dump_images2(results: dict, output_dir):
     for title, image in results.items():
@@ -177,6 +183,28 @@ def prepare_data(hparams):
                                  randcrop=randcrop, augment=augment, padding=padding,
                                  singleplane=False)
     
+    #------------------------------------------------------------------------------
+    # if hparams.mix_dualpixel_dataset:
+    #     dp_train_dataset = DualPixel('train',
+    #                                  (image_sz + 4 * crop_width,
+    #                                   image_sz + 4 * crop_width),
+    #                                  is_training=True,
+    #                                  randcrop=randcrop, augment=augment, padding=padding)
+
+    #     train_dataset = torch.utils.data.ConcatDataset([dp_train_dataset, sf_train_dataset])
+    #     n_sf = len(sf_train_dataset)
+    #     n_dp = len(dp_train_dataset)
+    #     print("n_sf=",n_sf)
+    #     print("n_dp=", n_dp)
+    #     sample_weights = torch.cat([1. / n_dp * torch.ones(n_dp, dtype=torch.double),
+    #                                 1. / n_sf * torch.ones(n_sf, dtype=torch.double)], dim=0)
+    #     #Samples elements from [0,..,len(weights)-1] with given probabilities (weights)
+    #     #Used for sample from  different size of datasets
+    #     sampler = torch.utils.data.WeightedRandomSampler(sample_weights, len(sample_weights))
+
+    #     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz, sampler=sampler,
+    #                                   num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
+    #------------------------------------------------------------------------------
     if hparams.mix_dualpixel_dataset:
         dp_train_dataset = DualPixel('train',
                                      (image_sz + 4 * crop_width,
@@ -184,18 +212,8 @@ def prepare_data(hparams):
                                      is_training=True,
                                      randcrop=randcrop, augment=augment, padding=padding)
 
-        train_dataset = torch.utils.data.ConcatDataset([dp_train_dataset, sf_train_dataset])
-        n_sf = len(sf_train_dataset)
-        n_dp = len(dp_train_dataset)
-        print("n_sf=",n_sf)
-        print("n_dp=", n_dp)
-        sample_weights = torch.cat([1. / n_dp * torch.ones(n_dp, dtype=torch.double),
-                                    1. / n_sf * torch.ones(n_sf, dtype=torch.double)], dim=0)
-        #Samples elements from [0,..,len(weights)-1] with given probabilities (weights)
-        #Used for sample from  different size of datasets
-        sampler = torch.utils.data.WeightedRandomSampler(sample_weights, len(sample_weights))
-
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz, sampler=sampler,
+        train_dataset = dp_train_dataset
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz,
                                       num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
     else:
         train_dataset = sf_train_dataset
@@ -203,6 +221,62 @@ def prepare_data(hparams):
                                       num_workers=hparams.num_workers, shuffle=True, pin_memory=True)
     return train_dataloader
 
+def training_step(model, device, data_loader, optimizer, args):
+    for train_batch in data_loader:
+        target_images = train_batch['image'].to(device)
+        target_depthmaps = train_batch['depthmap'].to(device)
+        depth_conf = train_batch['depth_conf'].to(device)
+
+        if depth_conf.ndim == 4:
+            depth_conf = crop_boundary(depth_conf, args.crop_width * 2)
+        outputs = model(target_images, target_depthmaps)
+        # Unpack outputs
+        est_images = outputs.est_images
+        est_depthmaps = outputs.est_depthmaps
+        target_images = outputs.target_images
+        target_depthmaps = outputs.target_depthmaps
+        captimgs_linear = outputs.captimgs_linear
+
+        data_loss, loss_logs = model.compute_loss(outputs, target_depthmaps, target_images, depth_conf)
+
+        #logging things
+        loss_logs = {f'{key}': val for key, val in loss_logs.items()}
+        misc_logs = {
+            'target_depth_max': target_depthmaps.max(),
+            'target_depth_min': target_depthmaps.min(),
+            'est_depth_max': est_depthmaps.max(),
+            'est_depth_min': est_depthmaps.min(),
+            'target_image_max': target_images.max(),
+            'target_image_min': target_images.min(),
+            'est_image_max': est_images.max(),
+            'est_image_min': est_images.min(),
+            'captimg_max': captimgs_linear.max(),
+            'captimg_min': captimgs_linear.min(),
+        }
+        # if args.optimize_optics:
+        #     misc_logs.update({
+        #         'optics/heightmap_max': model.camera.heightmap1d().max(),
+        #         'optics/heightmap_min': model.camera.heightmap1d().min(),
+        #         'optics/psf_out_of_fov_energy': loss_logs['train_loss/psf_loss'],
+        #         'optics/psf_out_of_fov_max': loss_logs['train_loss/psf_out_of_fov_max'],
+        #     })
+        # logs = {}
+        # logs.update(loss_logs)
+        # logs.update(misc_logs)
+        #model.log_dict(logs)
+        writer.add_scalars('train_loss', loss_logs, epoch)
+        writer.add_scalars('train_misc', misc_logs, epoch)
+        #optimize
+        data_loss.backward()
+        #model.optimizer_step()
+        # warm up lr
+        # if self.trainer.global_step < 4000:
+        #     lr_scale = min(1., float(self.trainer.global_step + 1) / 4000.)
+        #     optimizer.param_groups[0]['lr'] = lr_scale * args.optics_lr
+        #     optimizer.param_groups[1]['lr'] = lr_scale * args.cnn_lr
+        # update params
+        optimizer.step()
+        optimizer.zero_grad()
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Define the colormap for color mapping
@@ -225,14 +299,15 @@ if __name__ == '__main__':
                 'camera_pixel_pitch': hparams.sensor_diameter / real_image_size, #hparams.camera_pixel_pitch,
                 #'camera_pixel_pitch': hparams.camera_pixel_pitch,
                 'focal_length': hparams.focal_length,
-                'mask_diameter': hparams.mask_diameter,
-                #'mask_diameter': mask_diameter,
+                #'mask_diameter': hparams.mask_diameter,
+                'mask_diameter': mask_diameter,
                 'mask_size': hparams.mask_sz,
             }
     camera = AsymmetricMaskRotationallySymmetricCamera(**camera_recipe, requires_grad=False).to(device)
+
     # #dumping thing
     
-    #dump_images(camera.dump(), './results', cmap)
+    dump_images(camera.dump(), './results', cmap)
     dump_images(camera.dump_depth_psf(), './depth_psf_results', cmap)
     # testing with real image
     
@@ -279,6 +354,10 @@ if __name__ == '__main__':
     # Show the plot
     plt.show()
     #---------------------------------------
+
+
+
+
 
 
 

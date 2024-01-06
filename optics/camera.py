@@ -1245,7 +1245,8 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         #<--------------------------
         
        
-        in_camera_phase = self.to_sensor_phase_2(700)
+        #in_camera_phase = self.to_sensor_phase_2(700)
+        in_camera_phase = self.to_sensor_phase_2(400)
         new_size = amplitude.shape[-1] + in_camera_phase.shape[-1] - 1
         # amplitude = self.__padding2size(amplitude, new_size)
         # phase = self.__padding2size(phase, new_size)
@@ -1553,7 +1554,8 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
 
     def test_heightmap_diag(self):
         #R1 = 50
-        R1 = 50e-3
+        #R1 = 50e-3
+        R1 = self.focal_length / 2
         #Height = 2.4768
         min_z = 1e10
         #Height = 2.4768e-3

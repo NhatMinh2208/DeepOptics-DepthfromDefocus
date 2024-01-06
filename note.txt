@@ -76,6 +76,26 @@ infinity plane. The sensor length and res is only act like a tool to crop that.
 problem:
 divide depth level
 handle d = f
+mask_diameter = focal_length / f_number ????? (try to use this)
 
 change:
 mask_diameter: 2.4e-3 -> 5e-3
+
+
+camera can change focal_length va f_number
+the smaller the apeture, the longer exposure time (energy is constant)
+if we let camera sensor to light, it gonna be destroy
+
+
+
+this lens contain different height at each point, thus combine of many lens circular slide (combine of many 
+different focal_length) thus it kinda blurrer than traditional lens
+
+note: in this work, the psf is independ on the focal_length like traditional lens. (it will not exactly 
+focus at the focal_length)
+But we still use focal_length (to estimate sensor_to_lens_distance).
+it can be thought like an approximation we want to make, an starting point, such that
+we want our camera to be (approximately acting like a camera with focal_length).
+so focal_length not really have a meaning in our work(since a heightmap lens combine different focal_length)
+, but just an approximation to normal lens
+we want the network to learn. the focal_length in the input is like an expected length of many focal_length.
