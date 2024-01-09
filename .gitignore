@@ -8,3 +8,15 @@ datasets/
 depth_psf_results/
 model_results/
 *.tif
+__pycache__/
+run_trained_snapshotdepth_on_captured_images.py
+test.py
+rescale_test.py
+psf_test.py
+phasemask_test.py
+model_test.py
+amask_test.py
+interp_test.py
+dataset_test.py
+ffttest.py
+image.py
