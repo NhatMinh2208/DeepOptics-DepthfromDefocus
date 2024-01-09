@@ -10,10 +10,15 @@ from datasets.sceneflow import SceneFlow
 from models.model import DepthEstimator
 import utils.helper
 from PIL import Image
-
 import numpy as np
 import utils.IO as IO
 from utils.helper import crop_boundary, gray_to_rgb, imresize, linear_to_srgb, srgb_to_linear, to_bayer
+from torch.utils.tensorboard import SummaryWriter
+
+# global variable
+writer = SummaryWriter(comment='_' + 'train')
+global_step = 0
+
 def arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Train a differentiable camera')
 
@@ -69,11 +74,11 @@ def arg_parser() -> argparse.ArgumentParser:
     # resolution
     #parser.add_argument('--mask_sz', type=int, default=384) # whatever put in front of sensor (mask) resolution
     parser.add_argument('--mask_sz', type=int, default=384)
-    parser.add_argument('--image_sz', type=int, default=256) # sensor resolution
+    parser.add_argument('--image_sz', type=int, default=256) # sensor resolution (crop batch)
     # parser.add_argument('--mask_sz', type=int, default=400+128)
     # parser.add_argument('--image_sz', type=int, default=400) # sensor resolution
-    parser.add_argument('--full_size', type=int, default=1920) # extended sensor resolution (not used currently)
-
+    #parser.add_argument('--full_size', type=int, default=1920) # real sensor resolution 
+    parser.add_argument('--full_size', type=int, default=600)
     # physical length (meter)
     #parser.add_argument('--mask_diameter', type=float, default=2.4768e-3)
     # parser.add_argument('--mask_diameter', type=float, default=2.4768e-3)
@@ -84,7 +89,7 @@ def arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--focal_length', type=float, default=50e-3)
     # parser.add_argument('--focal_depth', type=float, default=1.7)
     # parser.add_argument('--focal_depth', type=float, default=1.7442)
-    parser.add_argument('--focal_depth', type=float, default=5.) #d
+    parser.add_argument('--focal_depth', type=float, default=1.7) #d
     # parser.add_argument('--focal_depth', type=float, default=1000000000.0)
     #parser.add_argument('--focal_depth', type=float, default= float('inf'))
     parser.add_argument('--f_number', type=float, default=20) #use to 
@@ -184,27 +189,6 @@ def prepare_data(hparams):
                                  singleplane=False)
     
     #------------------------------------------------------------------------------
-    # if hparams.mix_dualpixel_dataset:
-    #     dp_train_dataset = DualPixel('train',
-    #                                  (image_sz + 4 * crop_width,
-    #                                   image_sz + 4 * crop_width),
-    #                                  is_training=True,
-    #                                  randcrop=randcrop, augment=augment, padding=padding)
-
-    #     train_dataset = torch.utils.data.ConcatDataset([dp_train_dataset, sf_train_dataset])
-    #     n_sf = len(sf_train_dataset)
-    #     n_dp = len(dp_train_dataset)
-    #     print("n_sf=",n_sf)
-    #     print("n_dp=", n_dp)
-    #     sample_weights = torch.cat([1. / n_dp * torch.ones(n_dp, dtype=torch.double),
-    #                                 1. / n_sf * torch.ones(n_sf, dtype=torch.double)], dim=0)
-    #     #Samples elements from [0,..,len(weights)-1] with given probabilities (weights)
-    #     #Used for sample from  different size of datasets
-    #     sampler = torch.utils.data.WeightedRandomSampler(sample_weights, len(sample_weights))
-
-    #     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz, sampler=sampler,
-    #                                   num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
-    #------------------------------------------------------------------------------
     if hparams.mix_dualpixel_dataset:
         dp_train_dataset = DualPixel('train',
                                      (image_sz + 4 * crop_width,
@@ -212,16 +196,46 @@ def prepare_data(hparams):
                                      is_training=True,
                                      randcrop=randcrop, augment=augment, padding=padding)
 
-        train_dataset = dp_train_dataset
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz,
+        train_dataset = torch.utils.data.ConcatDataset([dp_train_dataset, sf_train_dataset])
+        n_sf = len(sf_train_dataset)
+        n_dp = len(dp_train_dataset)
+        print("n_sf=",n_sf)
+        print("n_dp=", n_dp)
+        sample_weights = torch.cat([1. / n_dp * torch.ones(n_dp, dtype=torch.double),
+                                    1. / n_sf * torch.ones(n_sf, dtype=torch.double)], dim=0)
+        #Samples elements from [0,..,len(weights)-1] with given probabilities (weights)
+        #Used for sample from  different size of datasets
+        sampler = torch.utils.data.WeightedRandomSampler(sample_weights, len(sample_weights))
+
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz, sampler=sampler,
                                       num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
+    #------------------------------------------------------------------------------
+    # if hparams.mix_dualpixel_dataset:
+    #     dp_train_dataset = DualPixel('train',
+    #                                  (image_sz + 4 * crop_width,
+    #                                   image_sz + 4 * crop_width),
+    #                                  is_training=True,
+    #                                  randcrop=randcrop, augment=augment, padding=padding)
+
+    #     train_dataset = dp_train_dataset
+    #     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz,
+    #                                   num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
     else:
         train_dataset = sf_train_dataset
         train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz,
                                       num_workers=hparams.num_workers, shuffle=True, pin_memory=True)
     return train_dataloader
 
-def training_step(model, device, data_loader, optimizer, args):
+def training_step(model, device, data_loader, optimizer, args, epoch, debug = False):
+    global global_step
+    optics_lr = model.hparams.optics_lr
+    cnn_lr = model.hparams.cnn_lr
+
+    if (debug):
+        print("optics_lr:")
+        print(optics_lr)
+        print("cnn_lr:")
+        print(cnn_lr)
     for train_batch in data_loader:
         target_images = train_batch['image'].to(device)
         target_depthmaps = train_batch['depthmap'].to(device)
@@ -268,15 +282,18 @@ def training_step(model, device, data_loader, optimizer, args):
         writer.add_scalars('train_misc', misc_logs, epoch)
         #optimize
         data_loss.backward()
-        #model.optimizer_step()
+        
         # warm up lr
-        # if self.trainer.global_step < 4000:
-        #     lr_scale = min(1., float(self.trainer.global_step + 1) / 4000.)
-        #     optimizer.param_groups[0]['lr'] = lr_scale * args.optics_lr
-        #     optimizer.param_groups[1]['lr'] = lr_scale * args.cnn_lr
+        if global_step < 4000:
+            lr_scale = min(1., float(global_step + 1) / 4000.)
+            optimizer.param_groups[0]['lr'] = lr_scale * optics_lr
+            optimizer.param_groups[1]['lr'] = lr_scale * cnn_lr
         # update params
         optimizer.step()
         optimizer.zero_grad()
+        global_step = global_step + 1
+
+       
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Define the colormap for color mapping
@@ -303,58 +320,71 @@ if __name__ == '__main__':
                 'mask_diameter': mask_diameter,
                 'mask_size': hparams.mask_sz,
             }
-    camera = AsymmetricMaskRotationallySymmetricCamera(**camera_recipe, requires_grad=False).to(device)
-
-    # #dumping thing
     
-    dump_images(camera.dump(), './results', cmap)
-    dump_images(camera.dump_depth_psf(), './depth_psf_results', cmap)
-    # testing with real image
-    
-    #data_loader = prepare_data(args)
-    model = DepthEstimator(hparams).to(device)
-    # optimizer = model.configure_optimizers()
-
     data_loader = prepare_data(hparams)
-    train_example = next(iter(data_loader))
-    target_images = train_example['image'].to(device)
-    target_depthmaps = train_example['depthmap'].to(device)
-    depth_conf = train_example['depth_conf'].to(device)
+    model = DepthEstimator(hparams).to(device)
+    optimizer = model.configure_optimizers()
+    for epoch in range(5):
+        training_step(model, device, data_loader, optimizer, hparams, epoch)
 
-    # target_images = torch.rand([1, 3, 384, 384]).to(device)
-    # target_depthmaps =  torch.rand([1, 1, 384, 384]).to(device)
-    # depth_conf = torch.ones([1, 1, 384, 384]).to(device)
+    print(global_step)
+    # #-------------------------------------------------------------------------------------------------
+    # #Test is camera work on focus 
 
-    result = model(target_images, target_depthmaps)
+    # camera = AsymmetricMaskRotationallySymmetricCamera(**camera_recipe, requires_grad=False).to(device)
 
-    # print(target_images.shape) #torch.Size([1, 3, 256, 256]) 
-    # print(target_depthmaps.shape) #torch.Size([1, 1, 384, 384])
-    # print(depth_conf.shape) #torch.Size([1, 1, 384, 384])
-    # print(result.est_images.shape) #torch.Size([1, 3, 256, 256])
-    # print(result.captimgs.shape) #torch.Size([1, 3, 256, 256]
-    dictionary = {}
-    # ['captimgs', 'captimgs_linear',
-    #                                       'est_images', 'est_depthmaps',
-    #                                       'target_images', 'target_depthmaps',
-    #                                       'psf'])
+    # # #dumping thing
+    
+    # dump_images(camera.dump(), './results', cmap)
+    # dump_images(camera.dump_depth_psf(), './depth_psf_results', cmap)
+    # # testing with real image
+    
+    # #data_loader = prepare_data(args)
+    # model = DepthEstimator(hparams).to(device)
+    # # optimizer = model.configure_optimizers()
 
-    #1106 281223
-    #---------------------------------------
-    dictionary['target_image'] = target_images[0]
-    dictionary['target_depthmap'] = target_depthmaps[0]
-    dictionary['result_captimgs'] = result.captimgs[0]
-    dump_images2(dictionary, './model_results')
+    # data_loader = prepare_data(hparams)
+    # train_example = next(iter(data_loader))
+    # target_images = train_example['image'].to(device)
+    # target_depthmaps = train_example['depthmap'].to(device)
+    # depth_conf = train_example['depth_conf'].to(device)
 
-    print(target_depthmaps[0][0]) 
-    ips_depth_map = utils.helper.ips_to_metric(target_depthmaps[0][0].cpu(), hparams.min_depth, hparams.max_depth)
-    #plt.imshow(target_depthmaps[0][0].cpu(), cmap=cmap)
-    plt.imshow(ips_depth_map, cmap=cmap)
-    plt.title('depth_map')
-    plt.colorbar()
-    # Show the plot
-    plt.show()
-    #---------------------------------------
+    # # target_images = torch.rand([1, 3, 384, 384]).to(device)
+    # # target_depthmaps =  torch.rand([1, 1, 384, 384]).to(device)
+    # # depth_conf = torch.ones([1, 1, 384, 384]).to(device)
 
+    # result = model(target_images, target_depthmaps)
+
+    # # print(target_images.shape) #torch.Size([1, 3, 256, 256]) 
+    # # print(target_depthmaps.shape) #torch.Size([1, 1, 384, 384])
+    # # print(depth_conf.shape) #torch.Size([1, 1, 384, 384])
+    # # print(result.est_images.shape) #torch.Size([1, 3, 256, 256])
+    # # print(result.captimgs.shape) #torch.Size([1, 3, 256, 256]
+    # dictionary = {}
+    # # ['captimgs', 'captimgs_linear',
+    # #                                       'est_images', 'est_depthmaps',
+    # #                                       'target_images', 'target_depthmaps',
+    # #                                       'psf'])
+
+    # #1106 281223
+    # #---------------------------------------
+    # dictionary['target_image'] = target_images[0]
+    # dictionary['target_depthmap'] = target_depthmaps[0]
+    # dictionary['result_captimgs'] = result.captimgs[0]
+    # dump_images2(dictionary, './model_results')
+
+    # print(target_depthmaps[0][0]) 
+    # ips_depth_map = utils.helper.ips_to_metric(target_depthmaps[0][0].cpu(), hparams.min_depth, hparams.max_depth)
+    # #plt.imshow(target_depthmaps[0][0].cpu(), cmap=cmap)
+    # plt.imshow(ips_depth_map, cmap=cmap)
+    # plt.title('depth_map')
+    # plt.colorbar()
+    # # Show the plot
+    # plt.show()
+
+
+    # #End test if camera work on focus
+    # #-------------------------------------------------------------------------------------------------
 
 
 

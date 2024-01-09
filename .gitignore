@@ -1,1 +1,10 @@
 runs/
+data/
+crap.txt
+note.txt
+results/
+**/__pycache__/
+datasets/
+depth_psf_results/
+model_results/
+*.tif

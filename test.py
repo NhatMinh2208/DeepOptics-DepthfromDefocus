@@ -354,5 +354,19 @@ print(3.87e-05 * 64 / 384)
 # resolution : 256
 # pitch: 
 
+x = torch.rand(1,6, 6)
+image_size = [4, 4]
+mask = torch.ones(1, 6, 6)
+uncropped_size = mask.shape
+uncropped_height = uncropped_size[-1]
+uncropped_width = uncropped_size[-2]
+left = (uncropped_width - image_size[0]) // 2
+top = (uncropped_height - image_size[1]) // 2
+right = (uncropped_width + image_size[0]) // 2
+bottom = (uncropped_height + image_size[1]) // 2
+mask[..., left:right, top:bottom] = 0
+
+x = x * mask.float()
+print(x)
 
 
