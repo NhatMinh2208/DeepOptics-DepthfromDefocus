@@ -1,80 +1,28 @@
-from datasets.dualpixel import DualPixel
-from datasets.sceneflow import SceneFlow
-import torch.utils.data
-
+import torch
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from optics.camera import Camera, RotationallySymmetricCamera, AsymmetricMaskRotationallySymmetricCamera
 import argparse
 import os
-
+from datetime import datetime
+import imageio
+from datasets.dualpixel import DualPixel
+from datasets.sceneflow import SceneFlow
 from models.model import DepthEstimator
-from torch.utils.tensorboard import SummaryWriter
-
+import utils.helper
+from PIL import Image
+import numpy as np
+import utils.IO as IO
 from utils.helper import crop_boundary, gray_to_rgb, imresize, linear_to_srgb, srgb_to_linear, to_bayer
-#prepare data
-def prepare_data(hparams):
-    image_sz = hparams.image_sz
-    crop_width = hparams.crop_width
-    augment = hparams.augment
-    randcrop = hparams.randcrop
-    padding = 0
-    val_idx = 3994
-    sf_train_dataset = SceneFlow('train',
-                                 (image_sz + 4 * crop_width,
-                                  image_sz + 4 * crop_width),
-                                 is_training=True,
-                                 randcrop=randcrop, augment=augment, padding=padding,
-                                 singleplane=False)
-    
-    #
-    sf_train_dataset = torch.utils.data.Subset(sf_train_dataset,
-                                               range(val_idx, len(sf_train_dataset)))
+from torch.utils.tensorboard import SummaryWriter
+from torchmetrics.functional.regression import mean_absolute_error, mean_squared_error
+from torchmetrics.functional.image import peak_signal_noise_ratio, structural_similarity_index_measure
+# global variable
+# date = datetime.now().strftime("%Y%m%d_%H%M%S")
+# tensorboard_path = 'exp' + str(date)
+# writer = SummaryWriter(os.path.join('runs', tensorboard_path))
+global_step = 0
 
-    sf_val_dataset = SceneFlow('train',
-                               (image_sz + 4 * crop_width,
-                                image_sz + 4 * crop_width),
-                               is_training=False,
-                               randcrop=randcrop, augment=augment, padding=padding,
-                               singleplane=False)
-    sf_val_dataset = torch.utils.data.Subset(sf_val_dataset, range(val_idx))
-    if hparams.mix_dualpixel_dataset:
-        dp_train_dataset = DualPixel('train',
-                                     (image_sz + 4 * crop_width,
-                                      image_sz + 4 * crop_width),
-                                     is_training=True,
-                                     randcrop=randcrop, augment=augment, padding=padding)
-        dp_val_dataset = DualPixel('val',
-                                   (image_sz + 4 * crop_width,
-                                    image_sz + 4 * crop_width),
-                                   is_training=False,
-                                   randcrop=randcrop, augment=augment, padding=padding)
-
-        train_dataset = torch.utils.data.ConcatDataset([dp_train_dataset, sf_train_dataset])
-        val_dataset = torch.utils.data.ConcatDataset([dp_val_dataset, sf_val_dataset])
-
-        n_sf = len(sf_train_dataset)
-        n_dp = len(dp_train_dataset)
-        print("n_sf=",n_sf)
-        print("n_dp=", n_dp)
-        sample_weights = torch.cat([1. / n_dp * torch.ones(n_dp, dtype=torch.double),
-                                    1. / n_sf * torch.ones(n_sf, dtype=torch.double)], dim=0)
-        #Samples elements from [0,..,len(weights)-1] with given probabilities (weights)
-        #Used for sample from  different size of datasets
-        sampler = torch.utils.data.WeightedRandomSampler(sample_weights, len(sample_weights))
-
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz, sampler=sampler,
-                                      num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
-        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=hparams.batch_sz,
-                                    num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
-    else:
-        train_dataset = sf_train_dataset
-        val_dataset = sf_val_dataset
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz,
-                                      num_workers=hparams.num_workers, shuffle=True, pin_memory=True)
-        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=hparams.batch_sz,
-                                    num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
-
-    return train_dataloader, val_dataloader
-
-#parser
 def arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Train a differentiable camera')
 
@@ -82,7 +30,7 @@ def arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--experiment_name', type=str, default='LearnedDepth')
     parser.add_argument('--mix_dualpixel_dataset', dest='mix_dual_pixel_dataset', action='store_true')
     parser.set_defaults(mix_dualpixel_dataset=True)
-
+    #parser.set_defaults(mix_dualpixel_dataset=False)
     # logger parameters
     parser.add_argument('--summary_max_images', type=int, default=4)
     parser.add_argument('--summary_image_sz', type=int, default=256)
@@ -105,8 +53,12 @@ def arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--psf_size', type=int, default=64)
 
     # dataset parameters
-    parser.add_argument('--image_sz', type=int, default=256)
+    #parser.add_argument('--n_depths', type=int, default=16)
     parser.add_argument('--n_depths', type=int, default=16)
+    #parser.add_argument('--min_depth', type=float, default=1.0)
+    #parser.add_argument('--min_depth', type=float, default= 0.001)
+    #parser.add_argument('--max_depth', type=float, default=5.0)
+    #parser.add_argument('--max_depth', type=float, default=1.0)
     parser.add_argument('--min_depth', type=float, default=1.0)
     parser.add_argument('--max_depth', type=float, default=5.0)
     parser.add_argument('--crop_width', type=int, default=32)
@@ -121,15 +73,36 @@ def arg_parser() -> argparse.ArgumentParser:
 
     # optics parameters
     parser.add_argument('--camera_type', type=str, default='mixed')
-    parser.add_argument('--mask_sz', type=int, default=8000)
+    # parser.add_argument('--mask_sz', type=int, default=2048)
+
+    # resolution
+    #parser.add_argument('--mask_sz', type=int, default=384) # whatever put in front of sensor (mask) resolution
+    parser.add_argument('--mask_sz', type=int, default=384)
+    parser.add_argument('--image_sz', type=int, default=256) # sensor resolution (crop batch)
+    # parser.add_argument('--mask_sz', type=int, default=400+128)
+    # parser.add_argument('--image_sz', type=int, default=400) # sensor resolution
+    #parser.add_argument('--full_size', type=int, default=1920) # real sensor resolution 
+    parser.add_argument('--full_size', type=int, default=600)
+    # physical length (meter)
+    #parser.add_argument('--mask_diameter', type=float, default=2.4768e-3)
+    # parser.add_argument('--mask_diameter', type=float, default=2.4768e-3)
+    #parser.add_argument('--mask_diameter', type=float, default=2.5e-3)
+    parser.add_argument('--sensor_diameter', type=float, default=2.4768e-3)
+    #parser.add_argument('--focal_length', type=float, default=50e-3)
+    #parser.add_argument('--focal_length', type=float, default=50e-3) #f
     parser.add_argument('--focal_length', type=float, default=50e-3)
-    parser.add_argument('--focal_depth', type=float, default=1.7)
-    parser.add_argument('--f_number', type=float, default=6.3)
-    parser.add_argument('--camera_pixel_pitch', type=float, default=6.45e-6)
+    # parser.add_argument('--focal_depth', type=float, default=1.7)
+    # parser.add_argument('--focal_depth', type=float, default=1.7442)
+    parser.add_argument('--focal_depth', type=float, default=1.7) #d
+    # parser.add_argument('--focal_depth', type=float, default=1000000000.0)
+    #parser.add_argument('--focal_depth', type=float, default= float('inf'))
+    parser.add_argument('--f_number', type=float, default=20) #use to 
+    #parser.add_argument('--camera_pixel_pitch', type=float, default=6.45e-6)
+
+
     parser.add_argument('--noise_sigma_min', type=float, default=0.001)
     parser.add_argument('--noise_sigma_max', type=float, default=0.005)
-    parser.add_argument('--full_size', type=int, default=1920)
-    parser.add_argument('--mask_upsample_factor', type=int, default=10)
+    parser.add_argument('--mask_upsample_factor', type=int, default=1)
     parser.add_argument('--diffraction_efficiency', type=float, default=0.7)
 
     parser.add_argument('--bayer', dest='bayer', action='store_true')
@@ -149,21 +122,135 @@ def arg_parser() -> argparse.ArgumentParser:
 
     parser.set_defaults(
         gpus=1,
-        default_root_dir='data/logs',
-        max_epochs=100,
+        default_root_dir='result_logs',
+        # max_epochs=100,
+        # max_epochs=2,
     )
-
+    parser.add_argument('--max_epochs', type=int, default=5)
+    parser.add_argument('--debug', default=False, action='store_true')
+    parser.add_argument('--checkpoint', type=str, default=None, help='load checkpoint')
     return parser
 
-def training_step(model, device, data_loader, optimizer, loss_fn, epoch, args):
-    for train_batch in data_loader:
-        target_images = train_batch['image'].to(device)
-        target_depthmaps = train_batch['depthmap'].to(device)
-        depth_conf = train_batch['depth_conf'].to(device)
+def dump_images(results: dict, output_dir, cmap):
+    for title, image in results.items():
+        #plt.figure()
+        # normalized term
+        image = image.cpu()
+        if(title == 'psf'):
+            min_value = image.min().item()
+            max_value = image.max().item()
+            image = (image - min_value) / (max_value - min_value)
+        # normalized term
+        # plt.imshow(image, cmap=cmap)
+        # plt.title(title)
+        # #plt.axis('off')  # Hide axes
+        # plt.colorbar()
+        # Define the filename for saving
+        filename = os.path.join(output_dir, f'{title}.png')
+        # Save the image as a file
+        # plt.savefig(filename)
+        # plt.close()
+        
+        # image = Image.fromarray(image.numpy())
+        # image = image.convert("L")
+        imageio.imwrite(filename, image)
+        #imageio.imwrite(filename, image.to(torch.uint8))
+
+def dump_images2(results: dict, output_dir):
+    for title, image in results.items():
+        n_channel = image.shape[0]
+        filename = os.path.join(output_dir, f'{title}.png')
+        if (n_channel == 3):
+            image_np = image.cpu().numpy().transpose((1, 2, 0))
+            # Normalize the values back to the [0, 255] range (assuming the tensor values were normalized)
+            image_np = ((image_np - image_np.min()) / (image_np.max() - image_np.min()) * 255).astype('uint8')
+            # Create a PIL image from the NumPy array
+            image_pil = Image.fromarray(image_np)
+            # Save the image using PIL
+            directory = os.path.dirname(filename)
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+            image_pil.save(filename)
+        if (n_channel == 1):
+            image = image.squeeze(0)
+            image_np = image.cpu().numpy()
+            image_pil = Image.fromarray(image_np.astype('uint8'), mode='L')  # 'L' mode for single-channel (grayscale)
+            directory = os.path.dirname(filename)
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+            # Save the image
+            image_pil.save(filename)
+def prepare_data(hparams):
+    image_sz = hparams.image_sz
+    crop_width = hparams.crop_width
+    augment = hparams.augment
+    randcrop = hparams.randcrop
+
+    padding = 0
+    val_idx = 3994
+    sf_train_dataset = SceneFlow('train',
+                                 (image_sz + 4 * crop_width,
+                                  image_sz + 4 * crop_width),
+                                 is_training=True,
+                                 randcrop=randcrop, augment=augment, padding=padding,
+                                 singleplane=False)
+    # sf_train_dataset = torch.utils.data.Subset(sf_train_dataset,
+    #                                            range(val_idx, len(sf_train_dataset)))
+
+    sf_val_dataset = SceneFlow('val',
+                               (image_sz + 4 * crop_width,
+                                image_sz + 4 * crop_width),
+                               is_training=False,
+                               randcrop=randcrop, augment=augment, padding=padding,
+                               singleplane=False)
+    # sf_val_dataset = torch.utils.data.Subset(sf_val_dataset, range(val_idx))
+
+    if hparams.mix_dualpixel_dataset:
+        dp_train_dataset = DualPixel('train',
+                                     (image_sz + 4 * crop_width,
+                                      image_sz + 4 * crop_width),
+                                     is_training=True,
+                                     randcrop=randcrop, augment=augment, padding=padding)
+        dp_val_dataset = DualPixel('val',
+                                   (image_sz + 4 * crop_width,
+                                    image_sz + 4 * crop_width),
+                                   is_training=False,
+                                   randcrop=randcrop, augment=augment, padding=padding)
+
+        train_dataset = torch.utils.data.ConcatDataset([dp_train_dataset, sf_train_dataset])
+        val_dataset = torch.utils.data.ConcatDataset([dp_val_dataset, sf_val_dataset])
+
+        n_sf = len(sf_train_dataset)
+        n_dp = len(dp_train_dataset)
+        sample_weights = torch.cat([1. / n_dp * torch.ones(n_dp, dtype=torch.double),
+                                    1. / n_sf * torch.ones(n_sf, dtype=torch.double)], dim=0)
+        sampler = torch.utils.data.WeightedRandomSampler(sample_weights, len(sample_weights))
+
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz, sampler=sampler,
+                                      num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
+        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=hparams.batch_sz,
+                                    num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
+    else:
+        train_dataset = sf_train_dataset
+        val_dataset = sf_val_dataset
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz,
+                                      num_workers=hparams.num_workers, shuffle=True, pin_memory=True)
+        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=hparams.batch_sz,
+                                    num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
+
+    return train_dataloader, val_dataloader
+
+
+def training_step(model, samples, batch_idx, device):
+        target_images = samples['image'].to(device)
+        target_depthmaps = samples['depthmap'].to(device)
+        depth_conf = samples['depth_conf'].to(device)
 
         if depth_conf.ndim == 4:
-            depth_conf = crop_boundary(depth_conf, args.crop_width * 2)
+            depth_conf = crop_boundary(depth_conf, model.crop_width * 2)
+
         outputs = model(target_images, target_depthmaps)
+
         # Unpack outputs
         est_images = outputs.est_images
         est_depthmaps = outputs.est_depthmaps
@@ -171,56 +258,17 @@ def training_step(model, device, data_loader, optimizer, loss_fn, epoch, args):
         target_depthmaps = outputs.target_depthmaps
         captimgs_linear = outputs.captimgs_linear
 
-        data_loss, loss_logs = model.__compute_loss(outputs, target_depthmaps, target_images, depth_conf)
+        data_loss, loss_logs = model.compute_loss(outputs, target_depthmaps, target_images, depth_conf)
+        #loss_logs = {f'train_loss/{key}': val for key, val in loss_logs.items()}
+        loss_logs = {f'{key}': val for key, val in loss_logs.items()}
+        return data_loss, loss_logs
 
-        #logging things
-        loss_logs = {f'train_loss/{key}': val for key, val in loss_logs.items()}
-        misc_logs = {
-            'train_misc/target_depth_max': target_depthmaps.max(),
-            'train_misc/target_depth_min': target_depthmaps.min(),
-            'train_misc/est_depth_max': est_depthmaps.max(),
-            'train_misc/est_depth_min': est_depthmaps.min(),
-            'train_misc/target_image_max': target_images.max(),
-            'train_misc/target_image_min': target_images.min(),
-            'train_misc/est_image_max': est_images.max(),
-            'train_misc/est_image_min': est_images.min(),
-            'train_misc/captimg_max': captimgs_linear.max(),
-            'train_misc/captimg_min': captimgs_linear.min(),
-        }
-        if args.optimize_optics:
-            misc_logs.update({
-                'optics/heightmap_max': model.camera.heightmap1d().max(),
-                'optics/heightmap_min': model.camera.heightmap1d().min(),
-                'optics/psf_out_of_fov_energy': loss_logs['train_loss/psf_loss'],
-                'optics/psf_out_of_fov_max': loss_logs['train_loss/psf_out_of_fov_max'],
-            })
-        logs = {}
-        logs.update(loss_logs)
-        logs.update(misc_logs)
-        if not self.global_step % args.summary_track_train_every:
-            model.__log_images(outputs, target_images, target_depthmaps, 'train')
-        model.log_dict(logs)
-
-        #optimize
-        data_loss.backward()
-        #model.optimizer_step()
-        # warm up lr
-        # if self.trainer.global_step < 4000:
-        #     lr_scale = min(1., float(self.trainer.global_step + 1) / 4000.)
-        #     optimizer.param_groups[0]['lr'] = lr_scale * args.optics_lr
-        #     optimizer.param_groups[1]['lr'] = lr_scale * args.cnn_lr
-        # update params
-        optimizer.step()
-        optimizer.zero_grad()
-
-
-def validation_step(model, device, data_loader, epoch, args):
-    for train_batch in data_loader:
-        target_images = train_batch['image'].to(device)
-        target_depthmaps = train_batch['depthmap'].to(device)
-        depth_conf = train_batch['depth_conf'].to(device)
+def validation_step(model, samples, batch_idx, device):
+        target_images = samples['image'].to(device)
+        target_depthmaps = samples['depthmap'].to(device)
+        depth_conf = samples['depth_conf'].to(device)
         if depth_conf.ndim == 4:
-            depth_conf = crop_boundary(depth_conf, 2 * args.crop_width)
+            depth_conf = crop_boundary(depth_conf, 2 * model.crop_width)
 
         outputs = model(target_images, target_depthmaps)
 
@@ -232,68 +280,107 @@ def validation_step(model, device, data_loader, epoch, args):
 
         est_depthmaps = est_depthmaps * depth_conf
         target_depthmaps = target_depthmaps * depth_conf
-        model.metrics['mae_depthmap'](est_depthmaps, target_depthmaps)
-        model.metrics['mse_depthmap'](est_depthmaps, target_depthmaps)
-        model.metrics['mae_image'](est_images, target_images)
-        model.metrics['mse_image'](est_images, target_images)
-        model.metrics['vgg_image'](est_images, target_images)
 
-        model.log('validation/mse_depthmap', model.metrics['mse_depthmap'], on_step=False, on_epoch=True)
-        model.log('validation/mae_depthmap', model.metrics['mae_depthmap'], on_step=False, on_epoch=True)
-        model.log('validation/mse_image', model.metrics['mse_image'], on_step=False, on_epoch=True)
-        model.log('validation/mae_image', model.metrics['mae_image'], on_step=False, on_epoch=True)
+        mae_depthmap = mean_absolute_error(est_depthmaps, target_depthmaps)
+        mse_depthmap = mean_squared_error(est_depthmaps, target_depthmaps)
+        mae_image = mean_absolute_error(est_images, target_images)
+        #must add .contiguous() since it demand for .view()
+        mse_image = mean_squared_error(est_images.contiguous(), target_images.contiguous())
+        psnr_image = peak_signal_noise_ratio(est_images, target_images)
+        ssim_image = structural_similarity_index_measure(est_images, target_images)
 
-        if batch_idx == 0:
-            model.__log_images(outputs, target_images, target_depthmaps, 'validation')
-        
+        val_losses = {
+            'mae_depthmap' : mae_depthmap,
+            'mse_depthmap' : mse_depthmap,
+            'mae_image' : mae_image,
+            'mse_image' : mse_image,
+            'psnr_image' : psnr_image, 
+            'ssim_image' : ssim_image
+        }
+        return val_losses
 
 if __name__ == '__main__':
-    # check for GPUs
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f'Using device: {device}')
-    if torch.cuda.is_available():
-        print(f'Num GPUs: {torch.cuda.device_count()}')
-
-    # parse command line
+    # Define the colormap for color mapping
+    # cmap = LinearSegmentedColormap.from_list('custom', [(0, 'red'), (0.5, 'green'), (1, 'blue')])
+    cmap = LinearSegmentedColormap.from_list('custom', [(0, 'black'), (1, 'white')])
+    # Normalize the tensor values to the range [0, 1]
     parser = arg_parser()
-    args = parser.parse_args()
-
-
-    # logger
-    logger = SummaryWriter(name=args.experiment_name)
-
-    # model
-    model = DepthEstimator().to(device)
+    hparams = parser.parse_args()
+    train_data_loader, val_data_loader = prepare_data(hparams)
+    model = DepthEstimator(hparams).to(device)
     optimizer = model.configure_optimizers()
-    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=25, cooldown=10, factor=0.5, min_lr=1e-5, threshold=1e-5)
-
-    # load checkpoint
-    if args.checkpoint:
-        state = torch.load(args.checkpoint, map_location=device)
-        best_loss = state['best_loss']
-        model.load_state_dict(state['weights'])
-        optimizer.load_state_dict(state['optimizer'])
-        #if args.amp: amp.load_state_dict(state['amp'])
-
-    for epoch in range(args.epochs):
+    epoch = 0
+    writer = SummaryWriter(os.path.join('runs', 'exp' + datetime.now().strftime("%Y%m%d_%H%M%S")))
+    if hparams.checkpoint:
+        checkpoint = torch.load(hparams.checkpoint, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        epoch = checkpoint['epoch'] + 1
+        loss = checkpoint['loss']
+        global_step = checkpoint['global_step']
+ 
+    while epoch < hparams.max_epochs:
+        optics_lr = model.hparams.optics_lr
+        cnn_lr = model.hparams.cnn_lr
         model.train()
-        eval_loss = model.training_step()
-        #scheduler.step(eval_loss)
-        # save checkpoint?
-        if eval_loss < best_loss:
-            best_loss = eval_loss
-            filename = os.path.join('checkpoints', args.name) + '.pt'
-            checkpoint = {
-                'best_loss': best_loss,
-                'weights': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-            }
-            #if args.amp: checkpoint['amp'] = amp.state_dict()
-            torch.save(checkpoint, filename)
-            if not args.amp: # FIXME bugged with amp
-                torch.save(model, os.path.join('models', args.name) + '.pt')
-            print(f'Checkpoint saved: {filename} (loss: {best_loss:.6f})')
-        
+        for batch_idx, batch in enumerate(train_data_loader):
+            loss, train_log = training_step(model, batch, batch_idx, device)
+            # clear gradients
+            optimizer.zero_grad()
+            # backward
+            loss.backward()
+            # update parameters
+            if global_step < 4000:
+                lr_scale = min(1., float(global_step + 1) / 4000.)
+                optimizer.param_groups[0]['lr'] = lr_scale * optics_lr
+                optimizer.param_groups[1]['lr'] = lr_scale * cnn_lr
+            optimizer.step()
+            writer.add_scalars('train_loss', train_log, global_step)
+            global_step = global_step + 1
         model.eval()
         with torch.no_grad():
-            validation_step()
+            mae_depthmap = mse_depthmap = mae_image = mse_image = psnr_image = ssim_image = 0.0
+            for batch_idx, batch in enumerate(val_data_loader):
+                val_losses = validation_step(model, batch, batch_idx, device) 
+                mae_depthmap = val_losses['mae_depthmap']
+                mse_depthmap = val_losses['mse_depthmap']
+                mae_image = val_losses['mae_image']
+                mse_image = val_losses['mse_image']
+                psnr_image = val_losses['psnr_image']
+                ssim_image = val_losses['ssim_image']
+            scaler = 1 / len(val_data_loader)
+            mae_depthmap *= scaler
+            mse_depthmap *= scaler
+            mae_image *= scaler
+            mse_image *= scaler
+            psnr_image *= scaler
+            ssim_image *= scaler
+            writer.add_scalars('val_loss', {
+                    'mae_depthmap' : mae_depthmap,
+                    'mse_depthmap' : mse_depthmap, 
+                    'mae_image' : mae_image,
+                    'mse_image' : mse_image,
+                    'psnr_image' : psnr_image,
+                    'ssim_image' : ssim_image, 
+            }, epoch)
+        #save checkpoint
+        path = os.path.join(hparams.default_root_dir, 'checkpoints') 
+        if not os.path.exists(path):
+            os.makedirs(path)
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(path, f'model_epoch{epoch}_loss{loss:.4f}_{current_time}.pt') 
+        #with open(path, 'w') as file:
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': loss,
+            'global_step': global_step,
+            }, path)
+        print(f'Checkpoint saved: {path} (loss: {loss:.4f})')
+        epoch += 1
+    print("global_step: ")
+    print(global_step)
+    print("\nEND.")
+

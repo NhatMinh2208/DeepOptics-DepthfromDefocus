@@ -9,6 +9,7 @@ from collections import namedtuple
 from argparse import ArgumentParser
 
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError
+from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from debayer import Debayer3x3
 
 from .unet import CNN
@@ -27,17 +28,17 @@ DepthEstimatorOutputs = namedtuple('DepthEstimatorOutputs',
 class DepthEstimator(nn.Module):
     def __init__(self, hparams, log_dir=None) -> None:
         super().__init__()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.hparams = copy.deepcopy(hparams)
        
         self.__build_model()
         self.metrics = {
-            'depth_loss': MeanAbsoluteError(),
-            'image_loss': MeanAbsoluteError(),
-            'mae_depthmap': MeanAbsoluteError(),
-            'mse_depthmap': MeanSquaredError(),
-            'mae_image': MeanAbsoluteError(),
-            'mse_image': MeanSquaredError(),
-            'vgg_image': MeanSquaredError(),
+            'mae_depthmap': MeanAbsoluteError().to(self.device),
+            'mse_depthmap': MeanSquaredError().to(self.device),
+            'mae_image': MeanAbsoluteError().to(self.device),
+            'mse_image': MeanSquaredError().to(self.device),
+            'psnr_image': PeakSignalNoiseRatio().to(self.device),
+            'ssim_image': StructuralSimilarityIndexMeasure().to(self.device),
         }
         self.log_dir = log_dir
 
@@ -59,6 +60,7 @@ class DepthEstimator(nn.Module):
             #'mask_diameter': hparams.mask_diameter,
             'mask_diameter': mask_diameter,
             'mask_size': hparams.mask_sz,
+            'debug': hparams.debug
         }
         optimize_optics = hparams.optimize_optics
 
@@ -73,37 +75,6 @@ class DepthEstimator(nn.Module):
         self.depth_lossfn = torch.nn.L1Loss()
 
         print(self.camera)
-
-    # def __build_model2(self):
-    #     hparams = self.hparams
-    #     self.crop_width = hparams.crop_width
-    #     mask_diameter = hparams.focal_length / hparams.f_number
-    #     wavelengths = [632e-9, 550e-9, 450e-9]
-    #     camera_recipe = {
-    #         'wavelengths': wavelengths,
-    #         'min_depth': hparams.min_depth,
-    #         'max_depth': hparams.max_depth,
-    #         'focal_depth': hparams.focal_depth,
-    #         'n_depths': hparams.n_depths,
-    #         'image_size': hparams.image_sz + 4 * self.crop_width,
-    #         'camera_pixel_pitch': hparams.camera_pixel_pitch,
-    #         'focal_length': hparams.focal_length,
-    #         'mask_diameter': mask_diameter,
-    #         'mask_size': hparams.mask_sz,
-    #     }
-    #     optimize_optics = hparams.optimize_optics
-
-    #     camera_recipe['mask_upsample_factor'] = hparams.mask_upsample_factor
-    #     camera_recipe['diffraction_efficiency'] = hparams.diffraction_efficiency
-    #     camera_recipe['full_size'] = hparams.full_size
-    #     self.camera = AsymmetricMaskRotationallySymmetricCamera(**camera_recipe, requires_grad=optimize_optics)
-    #     self.decoder = CNN(hparams)
-    #     self.debayer = Debayer3x3()
-
-    #     self.image_lossfn = Vgg16PerceptualLoss()
-    #     self.depth_lossfn = torch.nn.L1Loss()
-
-    #     print(self.camera)
 
     def forward(self, images, depthmaps):
         # invert the gamma correction for sRGB image

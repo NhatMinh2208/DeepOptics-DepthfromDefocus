@@ -1,0 +1,2 @@
+python train.py  --gpus 1 --batch_sz 3  --num_workers 8   --max_epochs 100  --optimize_optics  --psfjitter  --replace_sampler_ddp False
+#python snapshotdepth_trainer.py  --gpus 4 --batch_sz 3  --num_workers 0 --distributed_backend ddp  --max_epochs 100  --optimize_optics  --psfjitter  --replace_sampler_ddp False
