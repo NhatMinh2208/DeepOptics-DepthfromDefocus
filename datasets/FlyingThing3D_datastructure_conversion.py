@@ -8,7 +8,8 @@ import shutil
 
 total_files_dis =0
 for s in ['TRAIN', 'TEST']:
-    target = os.path.join('./', 'FlyingThings3D_subset', s.lower(), 'disparity', 'right')
+    SceneFlow_path = os.path.join('../data', 'training_data', 'SceneFlow')
+    target = os.path.join(SceneFlow_path, 'FlyingThings3D_subset', s.lower(), 'disparity', 'right')
     print("Target directory: ", target)
     try:
         os.makedirs(target)
@@ -18,7 +19,7 @@ for s in ['TRAIN', 'TEST']:
     for abc in ['A','B','C']:
         for id in range(0, 750):
             idstr  = '{:04d}'.format(id)
-            source = os.path.join('./Original/disparity',s,abc,idstr,'right')
+            source = os.path.join('../data/Original/disparity',s,abc,idstr,'right')
             fileprefix = abc+"_"+idstr
 
             print("check folder: ", source)
@@ -34,7 +35,8 @@ for s in ['TRAIN', 'TEST']:
 #2 converting the image
 total_files_img =0
 for s in ['TRAIN', 'TEST']:
-    target = os.path.join('./', 'FlyingThings3D_subset', s.lower(), 'image_clean', 'right')
+    SceneFlow_path = os.path.join('../data', 'training_data', 'SceneFlow')
+    target = os.path.join(SceneFlow_path, 'FlyingThings3D_subset', s.lower(), 'image_clean', 'right')
     print("Target directory: ", target)
     try:
         os.makedirs(target)
@@ -44,7 +46,7 @@ for s in ['TRAIN', 'TEST']:
     for abc in ['A','B','C']:
         for id in range(0, 750):
             idstr  = '{:04d}'.format(id)
-            source = os.path.join('./Original/frames_cleanpass',s,abc,idstr,'right')
+            source = os.path.join('../data/Original/frames_cleanpass',s,abc,idstr,'right')
             fileprefix = abc+"_"+idstr
 
             print("check folder: ", source)

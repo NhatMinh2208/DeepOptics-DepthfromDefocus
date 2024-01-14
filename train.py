@@ -77,12 +77,12 @@ def arg_parser() -> argparse.ArgumentParser:
 
     # resolution
     #parser.add_argument('--mask_sz', type=int, default=384) # whatever put in front of sensor (mask) resolution
-    parser.add_argument('--mask_sz', type=int, default=384)
+    parser.add_argument('--mask_sz', type=int, default=8000)
     parser.add_argument('--image_sz', type=int, default=256) # sensor resolution (crop batch)
     # parser.add_argument('--mask_sz', type=int, default=400+128)
     # parser.add_argument('--image_sz', type=int, default=400) # sensor resolution
-    #parser.add_argument('--full_size', type=int, default=1920) # real sensor resolution 
-    parser.add_argument('--full_size', type=int, default=600)
+    #parser.add_argument('--full_size', type=int, default=600) # real sensor resolution 
+    parser.add_argument('--full_size', type=int, default=1920)
     # physical length (meter)
     #parser.add_argument('--mask_diameter', type=float, default=2.4768e-3)
     # parser.add_argument('--mask_diameter', type=float, default=2.4768e-3)
@@ -311,7 +311,7 @@ if __name__ == '__main__':
     model = DepthEstimator(hparams).to(device)
     optimizer = model.configure_optimizers()
     epoch = 0
-    writer = SummaryWriter(os.path.join('runs', 'exp' + datetime.now().strftime("%Y%m%d_%H%M%S")))
+    writer = SummaryWriter(os.path.join('data','runs', 'exp' + datetime.now().strftime("%Y%m%d_%H%M%S")))
     if hparams.checkpoint:
         checkpoint = torch.load(hparams.checkpoint, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -365,7 +365,7 @@ if __name__ == '__main__':
                     'ssim_image' : ssim_image, 
             }, epoch)
         #save checkpoint
-        path = os.path.join(hparams.default_root_dir, 'checkpoints') 
+        path = os.path.join('data', 'checkpoints') 
         if not os.path.exists(path):
             os.makedirs(path)
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")

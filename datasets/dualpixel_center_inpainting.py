@@ -27,7 +27,7 @@ def inpaint(directory, id):
 
 
 target = ["train","test"]
-datadir = "./"
+datadir = os.path.join('../data', 'training_data', 'dualpixel')
 
 for dir in target:
     directory = os.path.join(datadir, dir)
