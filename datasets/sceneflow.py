@@ -17,11 +17,17 @@ TRAIN_IMAGE_PATH = [
 TRAIN_DISPARITY_PATH = [
     os.path.join(DATA_ROOT, 'FlyingThings3D_subset', 'train', 'disparity', s) for s in ['right']
 ]
+# VALIDATION_IMAGE_PATH = [
+#     os.path.join(DATA_ROOT, 'FlyingThings3D_subset', 'val', 'image_clean', s) for s in ['right']
+# ]
+# VALIDATION_DISPARITY_PATH = [
+#     os.path.join(DATA_ROOT, 'FlyingThings3D_subset', 'val', 'disparity', s) for s in ['right']
+# ]
 VALIDATION_IMAGE_PATH = [
-    os.path.join(DATA_ROOT, 'FlyingThings3D_subset', 'val', 'image_clean', s) for s in ['right']
+    os.path.join(DATA_ROOT, 'FlyingThings3D_subset', 'test', 'image_clean', s) for s in ['right']
 ]
 VALIDATION_DISPARITY_PATH = [
-    os.path.join(DATA_ROOT, 'FlyingThings3D_subset', 'val', 'disparity', s) for s in ['right']
+    os.path.join(DATA_ROOT, 'FlyingThings3D_subset', 'test', 'disparity', s) for s in ['right']
 ]
 EXAMPLE_IMAGE_PATH = [
     os.path.join(DATA_ROOT, 'example', 'FlyingThings3D', 'RGB_cleanpass', 'left')
@@ -46,6 +52,7 @@ class SceneFlow(Dataset):
         if dataset == 'train':
             image_dirs = TRAIN_IMAGE_PATH
             disparity_dirs = TRAIN_DISPARITY_PATH
+        # elif dataset == 'val':
         elif dataset == 'val':
             image_dirs = VALIDATION_IMAGE_PATH
             disparity_dirs = VALIDATION_DISPARITY_PATH
