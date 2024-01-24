@@ -10,6 +10,7 @@ model_results/
 __pycache__/
 run_trained_snapshotdepth_on_captured_images.py
 test.py
+test2.py
 rescale_test.py
 psf_test.py
 phasemask_test.py
