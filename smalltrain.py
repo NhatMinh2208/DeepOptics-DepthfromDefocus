@@ -341,8 +341,8 @@ def main(rank: int, world_size: int):
         global_step = checkpoint['global_step']
  
     while epoch < hparams.max_epochs:
-        optics_lr = model.hparams.optics_lr
-        cnn_lr = model.hparams.cnn_lr
+        optics_lr = hparams.optics_lr
+        cnn_lr = hparams.cnn_lr
         model.train()
         val_data_loader.sampler.set_epoch(epoch)
         for batch_idx, batch in enumerate(train_data_loader):
