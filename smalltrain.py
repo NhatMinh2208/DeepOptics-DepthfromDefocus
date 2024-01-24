@@ -269,7 +269,7 @@ def training_step(model, samples, batch_idx, device):
         depth_conf = samples['depth_conf'].to(device)
 
         if depth_conf.ndim == 4:
-            depth_conf = crop_boundary(depth_conf, model.crop_width * 2)
+            depth_conf = crop_boundary(depth_conf, model.module.crop_width * 2)
 
         outputs = model(target_images, target_depthmaps)
 
@@ -290,7 +290,7 @@ def validation_step(model, samples, batch_idx, device):
         target_depthmaps = samples['depthmap'].to(device)
         depth_conf = samples['depth_conf'].to(device)
         if depth_conf.ndim == 4:
-            depth_conf = crop_boundary(depth_conf, 2 * model.crop_width)
+            depth_conf = crop_boundary(depth_conf, 2 * model.module.crop_width)
 
         outputs = model(target_images, target_depthmaps)
 
