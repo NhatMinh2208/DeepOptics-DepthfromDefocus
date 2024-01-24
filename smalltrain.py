@@ -280,7 +280,7 @@ def training_step(model, samples, batch_idx, device):
         target_depthmaps = outputs.target_depthmaps
         captimgs_linear = outputs.captimgs_linear
 
-        data_loss, loss_logs = model.compute_loss(outputs, target_depthmaps, target_images, depth_conf)
+        data_loss, loss_logs = model.module.compute_loss(outputs, target_depthmaps, target_images, depth_conf)
         #loss_logs = {f'train_loss/{key}': val for key, val in loss_logs.items()}
         loss_logs = {f'{key}': val for key, val in loss_logs.items()}
         return data_loss, loss_logs
