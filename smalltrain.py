@@ -328,8 +328,8 @@ def main(rank: int, world_size: int):
     train_data_loader, val_data_loader = prepare_data(hparams)
 
     model = DepthEstimator(hparams).to(rank)
-    model = DDP(model, device_ids=[rank])
     optimizer = model.configure_optimizers()
+    model = DDP(model, device_ids=[rank])
     epoch = 0
     writer = SummaryWriter(os.path.join('data','runs', 'exp' + datetime.now().strftime("%Y%m%d_%H%M%S")))
     if hparams.checkpoint:
