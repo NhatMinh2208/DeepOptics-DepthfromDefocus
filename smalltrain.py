@@ -101,8 +101,10 @@ def arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--summary_track_train_every', type=int, default=4000)
 
     # training parameters
-    parser.add_argument('--cnn_lr', type=float, default=1e-3)
-    parser.add_argument('--optics_lr', type=float, default=1e-9)
+    # parser.add_argument('--cnn_lr', type=float, default=1e-3)
+    # parser.add_argument('--optics_lr', type=float, default=1e-9)
+    parser.add_argument('--cnn_lr', type=float, default=1e-5)
+    parser.add_argument('--optics_lr', type=float, default=1e-6)
     parser.add_argument('--batch_sz', type=int, default=1)
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--randcrop', default=False, action='store_true')
@@ -352,10 +354,10 @@ def main(rank: int, world_size: int):
             # backward
             loss.backward()
             # update parameters
-            if global_step < 4000:
-                lr_scale = min(1., float(global_step + 1) / 4000.)
-                optimizer.param_groups[0]['lr'] = lr_scale * optics_lr
-                optimizer.param_groups[1]['lr'] = lr_scale * cnn_lr
+            # if global_step < 4000:
+            #     lr_scale = min(1., float(global_step + 1) / 4000.)
+            #     optimizer.param_groups[0]['lr'] = lr_scale * optics_lr
+            #     optimizer.param_groups[1]['lr'] = lr_scale * cnn_lr
             optimizer.step()
             writer.add_scalars('train_loss', train_log, global_step)
             global_step = global_step + 1
