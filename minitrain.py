@@ -187,9 +187,9 @@ def prepare_data(hparams):
                                     1. / n_sf * torch.ones(n_sf, dtype=torch.double)], dim=0)
         sampler = torch.utils.data.WeightedRandomSampler(sample_weights, len(sample_weights))
 
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz, sampler=sampler(train_dataset),
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz, sampler=sampler,
                                       num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
-        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=hparams.batch_sz, sampler=sampler(val_dataset),
+        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=hparams.batch_sz,
                                     num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
     else:
         train_dataset = sf_train_dataset
