@@ -17,77 +17,14 @@ from utils.helper import crop_boundary, gray_to_rgb, imresize, linear_to_srgb, s
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.functional.regression import mean_absolute_error, mean_squared_error
 from torchmetrics.functional.image import peak_signal_noise_ratio, structural_similarity_index_measure
-
-import torch.multiprocessing as mp
-from torch.utils.data.distributed import DistributedSampler
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed import init_process_group, destroy_process_group
-
 # global variable
 # date = datetime.now().strftime("%Y%m%d_%H%M%S")
 # tensorboard_path = 'exp' + str(date)
 # writer = SummaryWriter(os.path.join('runs', tensorboard_path))
 global_step = 0
 
-def ddp_setup(rank: int, world_size: int):
-    """
-    Args:
-        rank: Unique identifier of each process
-    world_size: Total number of processes
-    """
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
-    init_process_group(backend="nccl", rank=rank, world_size=world_size)
-    torch.cuda.set_device(rank)
-
-
-# class Trainer:
-#     def __init__(
-#         self,
-#         model: torch.nn.Module,
-#         train_data: torch.utils.data.DataLoader,
-#         optimizer: torch.optim.Optimizer,
-#         gpu_id: int,
-#         save_every: int,
-#     ) -> None:
-#         self.gpu_id = gpu_id
-#         self.train_data = train_data
-#         self.optimizer = optimizer
-#         self.save_every = save_every
-#         self.model = DDP(model, device_ids=[gpu_id])
-
-#     def _run_batch(self, source, targets):
-#         self.optimizer.zero_grad()
-#         output = self.model(source)
-#         loss = F.cross_entropy(output, targets)
-#         loss.backward()
-#         self.optimizer.step()
-
-#     def _run_epoch(self, epoch):
-#         b_sz = len(next(iter(self.train_data))[0])
-#         print(f"[GPU{self.gpu_id}] Epoch {epoch} | Batchsize: {b_sz} | Steps: {len(self.train_data)}")
-#         self.train_data.sampler.set_epoch(epoch)
-#         for source, targets in self.train_data:
-#             source = source.to(self.gpu_id)
-#             targets = targets.to(self.gpu_id)
-#             self._run_batch(source, targets)
-
-#     def _save_checkpoint(self, epoch):
-#         ckp = self.model.module.state_dict()
-#         PATH = "checkpoint.pt"
-#         torch.save(ckp, PATH)
-#         print(f"Epoch {epoch} | Training checkpoint saved at {PATH}")
-
-#     def train(self, max_epochs: int):
-#         for epoch in range(max_epochs):
-#             self._run_epoch(epoch)
-#             if self.gpu_id == 0 and epoch % self.save_every == 0:
-#                 self._save_checkpoint(epoch)
-
-
 def arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Train a differentiable camera')
-
     # 
     parser.add_argument('--experiment_name', type=str, default='LearnedDepth')
     parser.add_argument('--mix_dualpixel_dataset', dest='mix_dual_pixel_dataset', action='store_true')
@@ -250,9 +187,9 @@ def prepare_data(hparams):
                                     1. / n_sf * torch.ones(n_sf, dtype=torch.double)], dim=0)
         sampler = torch.utils.data.WeightedRandomSampler(sample_weights, len(sample_weights))
 
-        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz, sampler=DistributedSampler(train_dataset),
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz, sampler=sampler(train_dataset),
                                       num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
-        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=hparams.batch_sz, sampler=DistributedSampler(val_dataset),
+        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=hparams.batch_sz, sampler=sampler(val_dataset),
                                     num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
     else:
         train_dataset = sf_train_dataset
@@ -263,7 +200,6 @@ def prepare_data(hparams):
                                     num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
 
     return train_dataloader, val_dataloader
-
 
 def training_step(model, samples, batch_idx, device):
         target_images = samples['image'].to(device)
@@ -322,22 +258,21 @@ def validation_step(model, samples, batch_idx, device):
             'ssim_image' : ssim_image
         }
         return val_losses
-
-def main(rank: int, world_size: int):
-    ddp_setup(rank, world_size)
+if __name__ == '__main__':
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Define the colormap for color mapping
+    # cmap = LinearSegmentedColormap.from_list('custom', [(0, 'red'), (0.5, 'green'), (1, 'blue')])
+    cmap = LinearSegmentedColormap.from_list('custom', [(0, 'black'), (1, 'white')])
+    # Normalize the tensor values to the range [0, 1]
     parser = arg_parser()
     hparams = parser.parse_args()
     train_data_loader, val_data_loader = prepare_data(hparams)
-
-    model = DepthEstimator(hparams).to(rank)
+    model = DepthEstimator(hparams).to(device)
     optimizer = model.configure_optimizers()
-    model = DDP(model, device_ids=[rank])
     epoch = 0
     writer = SummaryWriter(os.path.join('data','runs', 'exp' + datetime.now().strftime("%Y%m%d_%H%M%S")))
     if hparams.checkpoint:
-        map_location = {'cuda:%d' % 0: 'cuda:%d' % rank}
-        checkpoint = torch.load(hparams.checkpoint, map_location=map_location)
-        #checkpoint = torch.load(hparams.checkpoint, map_location=rank)
+        checkpoint = torch.load(hparams.checkpoint, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         epoch = checkpoint['epoch'] + 1
@@ -345,12 +280,11 @@ def main(rank: int, world_size: int):
         global_step = checkpoint['global_step']
  
     while epoch < hparams.max_epochs:
-        optics_lr = hparams.optics_lr
-        cnn_lr = hparams.cnn_lr
+        optics_lr = model.hparams.optics_lr
+        cnn_lr = model.hparams.cnn_lr
         model.train()
-        val_data_loader.sampler.set_epoch(epoch)
         for batch_idx, batch in enumerate(train_data_loader):
-            loss, train_log = training_step(model, batch, batch_idx, rank)
+            loss, train_log = training_step(model, batch, batch_idx, device)
             # clear gradients
             optimizer.zero_grad()
             # backward
@@ -367,7 +301,7 @@ def main(rank: int, world_size: int):
         with torch.no_grad():
             mae_depthmap = mse_depthmap = mae_image = mse_image = psnr_image = ssim_image = 0.0
             for batch_idx, batch in enumerate(val_data_loader):
-                val_losses = validation_step(model, batch, batch_idx, rank) 
+                val_losses = validation_step(model, batch, batch_idx, device) 
                 mae_depthmap = val_losses['mae_depthmap']
                 mse_depthmap = val_losses['mse_depthmap']
                 mae_image = val_losses['mae_image']
@@ -390,114 +324,22 @@ def main(rank: int, world_size: int):
                     'ssim_image' : ssim_image, 
             }, epoch)
         #save checkpoint
-        if rank == 0:
-            path = os.path.join('data', 'checkpoints') 
-            if not os.path.exists(path):
-                os.makedirs(path)
-            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-            path = os.path.join(path, f'model_epoch{epoch}_loss{loss:.4f}_{current_time}.pt') 
-            #with open(path, 'w') as file:
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.module.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': loss,
-                'global_step': global_step,
-                }, path)
-            print(f'Checkpoint saved: {path} (loss: {loss:.4f})')
+        path = os.path.join('data', 'checkpoints') 
+        if not os.path.exists(path):
+            os.makedirs(path)
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(path, f'model_epoch{epoch}_loss{loss:.4f}_{current_time}.pt') 
+        #with open(path, 'w') as file:
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': loss,
+            'global_step': global_step,
+            }, path)
+        print(f'Checkpoint saved: {path} (loss: {loss:.4f})')
         epoch += 1
     print("global_step: ")
     print(global_step)
     print("\nEND.")
-    # dataset, model, optimizer = load_train_objs()
-    # train_data = prepare_dataloader(dataset, batch_size)
-    # trainer = Trainer(model, train_data, optimizer, rank, save_every)
-    # trainer.train(total_epochs)
-    destroy_process_group()
-
-if __name__ == '__main__':
-    world_size = torch.cuda.device_count()
-    mp.spawn(main, args=(world_size,), nprocs=world_size)
-    # Define the colormap for color mapping
-    # cmap = LinearSegmentedColormap.from_list('custom', [(0, 'red'), (0.5, 'green'), (1, 'blue')])
-    # cmap = LinearSegmentedColormap.from_list('custom', [(0, 'black'), (1, 'white')])
-    # # Normalize the tensor values to the range [0, 1]
-    # parser = arg_parser()
-    # hparams = parser.parse_args()
-    # train_data_loader, val_data_loader = prepare_data(hparams)
-    # model = DepthEstimator(hparams).to(device)
-    # optimizer = model.configure_optimizers()
-    # epoch = 0
-    # writer = SummaryWriter(os.path.join('data','runs', 'exp' + datetime.now().strftime("%Y%m%d_%H%M%S")))
-    # if hparams.checkpoint:
-    #     checkpoint = torch.load(hparams.checkpoint, map_location=device)
-    #     model.load_state_dict(checkpoint['model_state_dict'])
-    #     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    #     epoch = checkpoint['epoch'] + 1
-    #     loss = checkpoint['loss']
-    #     global_step = checkpoint['global_step']
- 
-    # while epoch < hparams.max_epochs:
-    #     optics_lr = model.hparams.optics_lr
-    #     cnn_lr = model.hparams.cnn_lr
-    #     model.train()
-    #     for batch_idx, batch in enumerate(train_data_loader):
-    #         loss, train_log = training_step(model, batch, batch_idx, device)
-    #         # clear gradients
-    #         optimizer.zero_grad()
-    #         # backward
-    #         loss.backward()
-    #         # update parameters
-    #         if global_step < 4000:
-    #             lr_scale = min(1., float(global_step + 1) / 4000.)
-    #             optimizer.param_groups[0]['lr'] = lr_scale * optics_lr
-    #             optimizer.param_groups[1]['lr'] = lr_scale * cnn_lr
-    #         optimizer.step()
-    #         writer.add_scalars('train_loss', train_log, global_step)
-    #         global_step = global_step + 1
-    #     model.eval()
-    #     with torch.no_grad():
-    #         mae_depthmap = mse_depthmap = mae_image = mse_image = psnr_image = ssim_image = 0.0
-    #         for batch_idx, batch in enumerate(val_data_loader):
-    #             val_losses = validation_step(model, batch, batch_idx, device) 
-    #             mae_depthmap = val_losses['mae_depthmap']
-    #             mse_depthmap = val_losses['mse_depthmap']
-    #             mae_image = val_losses['mae_image']
-    #             mse_image = val_losses['mse_image']
-    #             psnr_image = val_losses['psnr_image']
-    #             ssim_image = val_losses['ssim_image']
-    #         scaler = 1 / len(val_data_loader)
-    #         mae_depthmap *= scaler
-    #         mse_depthmap *= scaler
-    #         mae_image *= scaler
-    #         mse_image *= scaler
-    #         psnr_image *= scaler
-    #         ssim_image *= scaler
-    #         writer.add_scalars('val_loss', {
-    #                 'mae_depthmap' : mae_depthmap,
-    #                 'mse_depthmap' : mse_depthmap, 
-    #                 'mae_image' : mae_image,
-    #                 'mse_image' : mse_image,
-    #                 'psnr_image' : psnr_image,
-    #                 'ssim_image' : ssim_image, 
-    #         }, epoch)
-    #     #save checkpoint
-    #     path = os.path.join('data', 'checkpoints') 
-    #     if not os.path.exists(path):
-    #         os.makedirs(path)
-    #     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    #     path = os.path.join(path, f'model_epoch{epoch}_loss{loss:.4f}_{current_time}.pt') 
-    #     #with open(path, 'w') as file:
-    #     torch.save({
-    #         'epoch': epoch,
-    #         'model_state_dict': model.state_dict(),
-    #         'optimizer_state_dict': optimizer.state_dict(),
-    #         'loss': loss,
-    #         'global_step': global_step,
-    #         }, path)
-    #     print(f'Checkpoint saved: {path} (loss: {loss:.4f})')
-    #     epoch += 1
-    # print("global_step: ")
-    # print(global_step)
-    # print("\nEND.")
 
