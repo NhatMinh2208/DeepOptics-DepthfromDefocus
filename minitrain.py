@@ -207,7 +207,7 @@ def training_step(model, samples, batch_idx, device):
         depth_conf = samples['depth_conf'].to(device)
 
         if depth_conf.ndim == 4:
-            depth_conf = crop_boundary(depth_conf, model.module.crop_width * 2)
+            depth_conf = crop_boundary(depth_conf, model.crop_width * 2)
 
         outputs = model(target_images, target_depthmaps)
 
@@ -218,7 +218,7 @@ def training_step(model, samples, batch_idx, device):
         target_depthmaps = outputs.target_depthmaps
         captimgs_linear = outputs.captimgs_linear
 
-        data_loss, loss_logs = model.module.compute_loss(outputs, target_depthmaps, target_images, depth_conf)
+        data_loss, loss_logs = model.compute_loss(outputs, target_depthmaps, target_images, depth_conf)
         #loss_logs = {f'train_loss/{key}': val for key, val in loss_logs.items()}
         loss_logs = {f'{key}': val for key, val in loss_logs.items()}
         return data_loss, loss_logs
@@ -228,7 +228,7 @@ def validation_step(model, samples, batch_idx, device):
         target_depthmaps = samples['depthmap'].to(device)
         depth_conf = samples['depth_conf'].to(device)
         if depth_conf.ndim == 4:
-            depth_conf = crop_boundary(depth_conf, 2 * model.module.crop_width)
+            depth_conf = crop_boundary(depth_conf, 2 * model.crop_width)
 
         outputs = model(target_images, target_depthmaps)
 
