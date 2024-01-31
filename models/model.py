@@ -13,7 +13,7 @@ from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMe
 from debayer import Debayer3x3
 
 from .unet import CNN
-from optics.camera import Camera, RotationallySymmetricCamera, AsymmetricMaskRotationallySymmetricCamera
+from optics.camera import Camera, RotationallySymmetricCamera, AsymmetricMaskRotationallySymmetricCamera, MixedCamera
 from optics.image_reconstruction import apply_tikhonov_inverse
 
 from utils.loss import Vgg16PerceptualLoss
@@ -67,7 +67,7 @@ class DepthEstimator(nn.Module):
         camera_recipe['mask_upsample_factor'] = hparams.mask_upsample_factor
         camera_recipe['diffraction_efficiency'] = hparams.diffraction_efficiency
         camera_recipe['full_size'] = hparams.full_size
-        self.camera = AsymmetricMaskRotationallySymmetricCamera(**camera_recipe, requires_grad=optimize_optics)
+        self.camera = MixedCamera(**camera_recipe, requires_grad=optimize_optics)
         self.decoder = CNN(hparams)
         self.debayer = Debayer3x3()
 
