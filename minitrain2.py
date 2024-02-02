@@ -1,14 +1,14 @@
 import torch
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
-from optics.camera import Camera, RotationallySymmetricCamera, AsymmetricMaskRotationallySymmetricCamera
+#from optics.camera import Camera, RotationallySymmetricCamera, AsymmetricMaskRotationallySymmetricCamera
 import argparse
 import os
 from datetime import datetime
 import imageio
 from datasets.dualpixel import DualPixel
 from datasets.sceneflow import SceneFlow
-from models.model import DepthEstimator
+from models.model2 import DepthEstimator
 import utils.helper
 from PIL import Image
 import numpy as np
@@ -69,9 +69,9 @@ def arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--camera_type', type=str, default='mixed')
 
     # resolution
-    parser.add_argument('--mask_sz', type=int, default=1024)
+    parser.add_argument('--mask_sz', type=int, default=8000)
     parser.add_argument('--image_sz', type=int, default=256) # sensor resolution (crop batch)
-    parser.add_argument('--full_size', type=int, default=600)
+    parser.add_argument('--full_size', type=int, default=1920)
     # physical length (meter)
     parser.add_argument('--sensor_diameter', type=float, default=2.4768e-3)
     parser.add_argument('--focal_length', type=float, default=50e-3)
