@@ -240,7 +240,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = arg_parser()
-    parser.add_argument('--captimg_path', type=str,  default='data/captured_data/indoor1_predemosaic.tif')
-    parser.add_argument('--ckpt_path', type=str, default='result_logs/checkpoints/model_epoch11_loss0.2139_20240202_191604.pt')
+    parser.add_argument('--captimg_path', type=str,  default='/captured_data/indoor1_predemosaic.tiff')
+    parser.add_argument('--ckpt_path', type=str, default='data/checkpoints/model_epoch11_loss0.2139_20240202_191604.pt')
     args = parser.parse_args()
     main(args)
