@@ -28,6 +28,7 @@ DepthEstimatorOutputs = namedtuple('DepthEstimatorOutputs',
 class DepthEstimator(nn.Module):
     def __init__(self, hparams, log_dir=None) -> None:
         super().__init__()
+        #self.device = torch.device("cpu")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.hparams = copy.deepcopy(hparams)
        
@@ -179,6 +180,10 @@ class DepthEstimator(nn.Module):
                self.hparams.image_loss_weight * image_loss + \
                self.hparams.psf_loss_weight * psf_loss
 
+    def combine_loss(self, depth_loss, image_loss, psf_loss):
+        return self.hparams.depth_loss_weight * depth_loss + \
+               self.hparams.image_loss_weight * image_loss + \
+               self.hparams.psf_loss_weight * psf_loss
     def compute_loss(self, outputs, target_depthmaps, target_images, depth_conf):
         hparams = self.hparams
         est_images = outputs.est_images

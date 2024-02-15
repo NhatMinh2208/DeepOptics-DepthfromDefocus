@@ -12,7 +12,7 @@ from utils import complex, interp
 from utils.fft import fftshift
 from utils.helper import copy_quadruple, depthmap_to_layereddepth, heightmap_to_phase, ips_to_metric, over_op, refractive_index
 
-
+#torch.manual_seed(42)
 class BaseCamera(nn.Module, metaclass=abc.ABCMeta):
 
     def __init__(self, focal_depth, min_depth, max_depth, n_depths, image_size, mask_size,
@@ -20,6 +20,7 @@ class BaseCamera(nn.Module, metaclass=abc.ABCMeta):
         super().__init__()
         assert min_depth > 1e-6, f'Minimum depth is too small. min_depth: {min_depth}'
         scene_distances = ips_to_metric(torch.linspace(0, 1, steps=n_depths), min_depth, max_depth)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self._register_wavlength(wavelengths)
 
@@ -72,35 +73,83 @@ class BaseCamera(nn.Module, metaclass=abc.ABCMeta):
 
     def _capture_impl(self, volume, layered_depth, psf, occlusion, eps=1e-3):
         scale = volume.max()
-        volume = volume / scale
-        Fpsf = torch.fft.rfft2(psf)
-
+        volume = volume / scale   # (B, 3, D, H, W)
+        Fpsf = torch.view_as_real(torch.fft.rfft2(psf))
+        # print("psf")
+        # print(psf)
         if occlusion:
-            Fvolume = torch.fft.rfft2(volume)
-            Flayered_depth = torch.fft.rfft2(layered_depth)
-            blurred_alpha_rgb = torch.fft.irfft2(
-                complex.multiply(Flayered_depth, Fpsf), volume.shape[-2:])
-            blurred_volume = torch.fft.irfft2(
-                complex.multiply(Fvolume, Fpsf), volume.shape[-2:])
+            #Fvolume = torch.rfft(volume, 2)
+            Fvolume = torch.view_as_real(torch.fft.rfft2(volume))
+            #Flayered_depth = torch.rfft(layered_depth, 2)
+            Flayered_depth = torch.view_as_real(torch.fft.rfft2(layered_depth))
+            # blurred_alpha_rgb = torch.irfft(
+            #     complex.multiply(Flayered_depth, Fpsf), 2, signal_sizes=volume.shape[-2:])
+            # blurred_volume = torch.irfft(
+            #     complex.multiply(Fvolume, Fpsf), 2, signal_sizes=volume.shape[-2:])
+            Fpsf = Fpsf.to(self.device)
+            blurred_alpha_rgb = torch.fft.irfft2(torch.view_as_complex(complex.multiply(Flayered_depth, Fpsf)), volume.shape[-2:])
+            blurred_volume = torch.fft.irfft2(torch.view_as_complex(complex.multiply(Fvolume, Fpsf)), volume.shape[-2:])
 
+            # print("Fpsf")
+            # print(Fpsf)
+            # print("blurred_alpha_rgb")
+            # print(blurred_alpha_rgb)
+            # print(blurred_alpha_rgb.shape)
             # Normalize the blurred intensity
             cumsum_alpha = torch.flip(torch.cumsum(torch.flip(layered_depth, dims=(-3,)), dim=-3), dims=(-3,))
-            Fcumsum_alpha = torch.fft.rfft2(cumsum_alpha)
-            blurred_cumsum_alpha = torch.fft.irfft2(
-                complex.multiply(Fcumsum_alpha, Fpsf), volume.shape[-2:])
+            #Fcumsum_alpha = torch.rfft(cumsum_alpha, 2)
+            Fcumsum_alpha = torch.view_as_real(torch.fft.rfft2(cumsum_alpha))
+            # blurred_cumsum_alpha = torch.irfft(
+            #     complex.multiply(Fcumsum_alpha, Fpsf), 2, signal_sizes=volume.shape[-2:])
+            blurred_cumsum_alpha = torch.fft.irfft2(torch.view_as_complex(complex.multiply(Fcumsum_alpha, Fpsf)), volume.shape[-2:])
             blurred_volume = blurred_volume / (blurred_cumsum_alpha + eps)
             blurred_alpha_rgb = blurred_alpha_rgb / (blurred_cumsum_alpha + eps)
 
             over_alpha = over_op(blurred_alpha_rgb)
             captimg = torch.sum(over_alpha * blurred_volume, dim=-3)
         else:
-            Fvolume = torch.fft.rfft2(volume)
+            #Fvolume = torch.rfft(volume, 2)
+            Fvolume = torch.view_as_real(torch.fft.rfft2(volume))
             Fcaptimg = complex.multiply(Fvolume, Fpsf).sum(dim=2)
-            captimg = torch.fft.irfft2(Fcaptimg, volume.shape[-2:])
+            #captimg = torch.irfft(Fcaptimg, 2, signal_sizes=volume.shape[-2:])
+            captimg = torch.fft.irfft2(torch.view_as_complex(Fcaptimg), volume.shape[-2:])
 
         captimg = scale * captimg
         volume = scale * volume
+        # print("captimg")
+        # print(captimg)
         return captimg, volume
+        # scale = volume.max()
+        # volume = volume / scale
+        # Fpsf = torch.fft.rfft2(psf)     
+        # if occlusion:
+        #     Fvolume = torch.fft.rfft2(volume)
+        #     Flayered_depth = torch.fft.rfft2(layered_depth)
+        #     blurred_alpha_rgb = torch.fft.irfft2(
+        #         complex.multiply(Flayered_depth, Fpsf), volume.shape[-2:])
+        #     blurred_volume = torch.fft.irfft2(
+        #         complex.multiply(Fvolume, Fpsf), volume.shape[-2:])
+
+        #     print("Flayered_depth")
+        #     print(Flayered_depth)  
+        #     # Normalize the blurred intensity
+        #     cumsum_alpha = torch.flip(torch.cumsum(torch.flip(layered_depth, dims=(-3,)), dim=-3), dims=(-3,))
+        #     Fcumsum_alpha = torch.fft.rfft2(cumsum_alpha)
+        #     blurred_cumsum_alpha = torch.fft.irfft2(
+        #         complex.multiply(Fcumsum_alpha, Fpsf), volume.shape[-2:])
+        #     blurred_volume = blurred_volume / (blurred_cumsum_alpha + eps)
+        #     blurred_alpha_rgb = blurred_alpha_rgb / (blurred_cumsum_alpha + eps)
+
+        #     over_alpha = over_op(blurred_alpha_rgb)
+        #     captimg = torch.sum(over_alpha * blurred_volume, dim=-3)
+        # else:
+        #     Fvolume = torch.fft.rfft2(volume)
+        #     Fcaptimg = complex.multiply(Fvolume, Fpsf).sum(dim=2)
+        #     captimg = torch.fft.irfft2(Fcaptimg, volume.shape[-2:])
+
+        # captimg = scale * captimg
+        # volume = scale * volume
+        # return captimg, volume
 
     def _capture_from_rgbd_with_psf_impl(self, img, depthmap, psf, occlusion):
         layered_depth = depthmap_to_layereddepth(depthmap, self.n_depths, binary=True)
@@ -396,7 +445,7 @@ class MixedCamera(RotationallySymmetricCamera):
         wave_number = 2 * math.pi / wavelengths
 
         radius = torch.sqrt(scene_distances ** 2 + r ** 2)  # 1 x D x n_r
-
+        #print(scene_distances)
         # ignore 1/j term (constant phase)
         amplitude = scene_distances / wavelengths / radius ** 2  # n_wl x D x n_r
         amplitude /= amplitude.max()
@@ -427,7 +476,7 @@ class MixedCamera(RotationallySymmetricCamera):
         amplitude = prop_amplitude.unsqueeze(2)  # n_wl X D X 1 x n_r
         real = torch.matmul(amplitude * torch.cos(phase), H).squeeze(-2)
         imag = torch.matmul(amplitude * torch.sin(phase), H).squeeze(-2)
-
+        #print(prop_amplitude)
         return (2 * math.pi / wavelengths / self.sensor_distance()) ** 2 * (real ** 2 + imag ** 2)  # n_wl X D X n_rho
 
     def _psf_at_camera_impl(self, H, rho_grid, rho_sampling, ind, size, scene_distances, modulate_phase):
@@ -439,16 +488,19 @@ class MixedCamera(RotationallySymmetricCamera):
 
     def psf_at_camera(self, size=None, modulate_phase=torch.tensor(True), is_training=torch.tensor(False)):
         device = self.H.device
+        #print((torch.rand(self.n_depths, device=device)))
         if is_training:
             scene_distances = ips_to_metric(
                 torch.linspace(0, 1, steps=self.n_depths, device=device) +
                 1 / self.n_depths * (torch.rand(self.n_depths, device=device) - 0.5),
                 self.min_depth, self.max_depth)
+            #print(device)
             scene_distances[-1] += torch.rand(1, device=device)[0] * (100.0 - self.max_depth)
         else:
             scene_distances = ips_to_metric(torch.linspace(0, 1, steps=self.n_depths, device=device),
                                             self.min_depth, self.max_depth)
-
+        #print(scene_distances)
+        
         diffracted_psf = self._psf_at_camera_impl(
             self.H, self.rho_grid, self.rho_sampling, self.ind, self.image_size, scene_distances, modulate_phase)
         undiffracted_psf = self._psf_at_camera_impl(
@@ -457,7 +509,10 @@ class MixedCamera(RotationallySymmetricCamera):
         # Keep the normalization factor for penalty computation
         self.diff_normalization_scaler = diffracted_psf.sum(dim=(-1, -2), keepdim=True)
         self.undiff_normalization_scaler = undiffracted_psf.sum(dim=(-1, -2), keepdim=True)
-
+        # print("diffracted_psf")
+        # print(diffracted_psf)
+        # print("undiffracted_psf")
+        # print(undiffracted_psf)
         diffracted_psf = diffracted_psf / self.diff_normalization_scaler
         undiffracted_psf = undiffracted_psf / self.undiff_normalization_scaler
 
