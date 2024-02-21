@@ -448,8 +448,11 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         # init_ampmask2d[127,127] = float(1.0)
 
         # Amplitude Cicular-fully-openned-mask initialization
-        init_ampmask2d = self.copy_quadruple(self.circular_mask(64))
-        self.ampmask2d = init_ampmask2d
+
+        aperture_mask = self.copy_quadruple(self.circular_mask(64))
+        init_ampmask2d = torch.zeros(64,64, dtype=torch.float32)
+        ampmask2d = torch.nn.Parameter(init_ampmask2d, requires_grad=requires_grad)
+        self.ampmask2d = ampmask2d * aperture_mask
         #self.ampmask2d = torch.nn.Parameter(init_ampmask2d, requires_grad=requires_grad)
 
         # Zeros-heightmap initialization

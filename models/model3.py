@@ -13,7 +13,7 @@ from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMe
 from debayer import Debayer3x3
 
 from .unet import CNN
-from optics.camera import Camera, RotationallySymmetricCamera, AsymmetricMaskRotationallySymmetricCamera, MixedCamera
+from optics.camera3 import Camera, RotationallySymmetricCamera, AsymmetricMaskRotationallySymmetricCamera, MixedCamera
 from optics.image_reconstruction import apply_tikhonov_inverse
 
 from utils.loss import Vgg16PerceptualLoss
@@ -196,7 +196,8 @@ class DepthEstimator(nn.Module):
         psf_out_of_fov_sum, psf_out_of_fov_max = self.camera.psf_out_of_fov_energy(hparams.psf_size)
         psf_loss = psf_out_of_fov_sum
 
-        total_loss = self.__combine_loss(depth_loss, image_loss, psf_loss)
+        #total_loss = self.__combine_loss(depth_loss, image_loss, psf_loss)
+        total_loss = self.__combine_loss(depth_loss, image_loss, psf_loss) + self.bi_regularizer(self.camera.ampmask2d)
         logs = {
             'total_loss': total_loss,
             'depth_loss': depth_loss,

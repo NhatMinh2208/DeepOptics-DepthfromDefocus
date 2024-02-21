@@ -8,7 +8,7 @@ from datetime import datetime
 import imageio
 from datasets.dualpixel import DualPixel
 from datasets.sceneflow import SceneFlow
-from models.model2 import DepthEstimator
+from models.model3 import DepthEstimator
 import utils.helper
 from PIL import Image
 import numpy as np
@@ -41,7 +41,7 @@ def arg_parser() -> argparse.ArgumentParser:
     # parser.add_argument('--cnn_lr', type=float, default=1e-3)
     # parser.add_argument('--optics_lr', type=float, default=1e-9)
     parser.add_argument('--cnn_lr', type=float, default=1e-5)
-    parser.add_argument('--optics_lr', type=float, default=1e-6)
+    parser.add_argument('--optics_lr', type=float, default=1e-8)
     parser.add_argument('--batch_sz', type=int, default=1)
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--randcrop', default=False, action='store_true')
@@ -319,9 +319,8 @@ if __name__ == '__main__':
                 mse_image += val_losses['mse_image']
                 psnr_image += val_losses['psnr_image']
                 ssim_image += val_losses['ssim_image']
-                vgg_image += val_losses['vgg_image']
                 mae_depthmap_outs.append(mae_depthmap)
-                vgg_image_outs.append(vgg_image)
+                vgg_image_outs.append(mse_image)
             val_loss = validation_epoch_end(model, mae_depthmap_outs, vgg_image_outs)
             scaler = 1 / len(val_data_loader)
             mae_depthmap *= scaler
