@@ -196,8 +196,8 @@ class DepthEstimator(nn.Module):
         psf_out_of_fov_sum, psf_out_of_fov_max = self.camera.psf_out_of_fov_energy(hparams.psf_size)
         psf_loss = psf_out_of_fov_sum
 
-        #total_loss = self.__combine_loss(depth_loss, image_loss, psf_loss)
-        total_loss = self.__combine_loss(depth_loss, image_loss, psf_loss) + self.bi_regularizer(self.camera.ampmask2d)
+        total_loss = self.__combine_loss(depth_loss, image_loss, psf_loss)
+        #total_loss = self.__combine_loss(depth_loss, image_loss, psf_loss) + self.bi_regularizer(self.camera.ampmask2d)
         logs = {
             'total_loss': total_loss,
             'depth_loss': depth_loss,
@@ -207,10 +207,10 @@ class DepthEstimator(nn.Module):
         }
         return total_loss, logs
 
-    def bi_regularizer(self, CA_params, hyper_param0 : int = 1, hyper_param1 : int = 1):
-        CA_params_minus_one = CA_params - 1
-        R = (torch.square(CA_params) ^ hyper_param0) * (torch.square(CA_params_minus_one) ^ hyper_param1)
-        return torch.sum(R)
+    # def bi_regularizer(self, CA_params, hyper_param0 : int = 1, hyper_param1 : int = 1):
+    #     CA_params_minus_one = CA_params - 1
+    #     R = (torch.square(CA_params)) * (torch.square(CA_params_minus_one))
+    #     return torch.sum(R)
 
 
     def training_step(self, samples, batch_idx):

@@ -405,8 +405,8 @@ class RotationallySymmetricCamera(Camera):
         scene_distances = utils.helper.ips_to_metric(torch.linspace(0, 1, steps=self.n_depths, device=device),
                                         self.min_depth, self.max_depth)
         # psf1d_diffracted = self.psf1d_full(scene_distances, torch.tensor(True))
-        # psf1d_diffracted = self._psf_at_camera_impl_full(scene_distances, torch.tensor(True))
-        psf1d_diffracted = self.psf_at_camera_full
+        psf1d_diffracted = self._psf_at_camera_impl_full(scene_distances, torch.tensor(True))
+        #psf1d_diffracted = self.psf_at_camera_full
         # Normalize PSF based on the cropped PSF
 
         #dump
@@ -450,7 +450,7 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         # Amplitude Cicular-fully-openned-mask initialization
 
         aperture_mask = self.copy_quadruple(self.circular_mask(64))
-        init_ampmask2d = torch.zeros(64,64, dtype=torch.float32)
+        init_ampmask2d = torch.zeros(64,64, dtype=torch.float32) + 0.5
         ampmask2d = torch.nn.Parameter(init_ampmask2d, requires_grad=requires_grad)
         self.ampmask2d = ampmask2d * aperture_mask
         #self.ampmask2d = torch.nn.Parameter(init_ampmask2d, requires_grad=requires_grad)
@@ -459,7 +459,7 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         #self.heightmap1d_ = torch.zeros(mask_size // 2 // mask_upsample_factor).to(self.device)
 
         # Test-hightmap
-        # self.heightmap1d_ = self.test_heightmap_diag()
+        #self.heightmap1d_ = self.test_heightmap_diag()
         init_heightmap1d = torch.zeros(mask_size // 2)  # 1D half size (radius diag)
         self.heightmap1d_ = torch.nn.Parameter(init_heightmap1d, requires_grad=requires_grad)
 
@@ -522,8 +522,8 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         This function is intend to scale that into the mask resolution.\n
         '''
         # make sure that we always get Amp-mask laid into [0, 1]
-        tanh_mask2D = torch.tanh(self.ampmask2d)
-        new_mask = F.interpolate(tanh_mask2D.unsqueeze(0).unsqueeze(0), size=(self.mask_size, self.mask_size), mode='nearest').squeeze()
+        mask2D = torch.sigmoid(self.ampmask2d)
+        new_mask = F.interpolate(mask2D.unsqueeze(0).unsqueeze(0), size=(self.mask_size, self.mask_size), mode='nearest').squeeze()
         return new_mask
     def radius_sampling(self):
         coord_y = self.mask_pitch * torch.arange(1, self.mask_size // 2 + 1).reshape(-1, 1)
