@@ -40,8 +40,8 @@ def arg_parser() -> argparse.ArgumentParser:
     # training parameters
     # parser.add_argument('--cnn_lr', type=float, default=1e-3)
     # parser.add_argument('--optics_lr', type=float, default=1e-9)
-    parser.add_argument('--cnn_lr', type=float, default=1e-5)
-    parser.add_argument('--optics_lr', type=float, default=1e-6)
+    parser.add_argument('--cnn_lr', type=float, default=1e-6)
+    parser.add_argument('--optics_lr', type=float, default=1e-9)
     parser.add_argument('--batch_sz', type=int, default=1)
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--randcrop', default=False, action='store_true')
@@ -258,6 +258,14 @@ def validation_step(model, samples, batch_idx, device):
             'ssim_image' : ssim_image
         }
         return val_losses
+
+def validation_epoch_end(model, outputs1, outputs2):
+    # do something with the predictions from all validation_steps
+    mae_depthmap = torch.mean(torch.tensor(outputs1))
+    vgg_image = torch.mean(torch.tensor(outputs2))
+    val_loss = model.combine_loss(mae_depthmap, vgg_image, 0.)
+    return val_loss
+
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Define the colormap for color mapping
@@ -299,15 +307,20 @@ if __name__ == '__main__':
             global_step = global_step + 1
         model.eval()
         with torch.no_grad():
-            mae_depthmap = mse_depthmap = mae_image = mse_image = psnr_image = ssim_image = 0.0
+            mae_depthmap_outs = []
+            vgg_image_outs = []
+            mae_depthmap = mse_depthmap = mae_image = mse_image = psnr_image = ssim_image = vgg_image = 0.0
             for batch_idx, batch in enumerate(val_data_loader):
                 val_losses = validation_step(model, batch, batch_idx, device) 
-                mae_depthmap = val_losses['mae_depthmap']
-                mse_depthmap = val_losses['mse_depthmap']
-                mae_image = val_losses['mae_image']
-                mse_image = val_losses['mse_image']
-                psnr_image = val_losses['psnr_image']
-                ssim_image = val_losses['ssim_image']
+                mae_depthmap += val_losses['mae_depthmap']
+                mse_depthmap += val_losses['mse_depthmap']
+                mae_image += val_losses['mae_image']
+                mse_image += val_losses['mse_image']
+                psnr_image += val_losses['psnr_image']
+                ssim_image += val_losses['ssim_image']
+                mae_depthmap_outs.append(mae_depthmap)
+                vgg_image_outs.append(mse_image)
+            val_loss = validation_epoch_end(model, mae_depthmap_outs, vgg_image_outs)
             scaler = 1 / len(val_data_loader)
             mae_depthmap *= scaler
             mse_depthmap *= scaler
@@ -315,6 +328,7 @@ if __name__ == '__main__':
             mse_image *= scaler
             psnr_image *= scaler
             ssim_image *= scaler
+            vgg_image *= scaler
             writer.add_scalars('val_loss', {
                     'mae_depthmap' : mae_depthmap,
                     'mse_depthmap' : mse_depthmap, 
@@ -322,13 +336,15 @@ if __name__ == '__main__':
                     'mse_image' : mse_image,
                     'psnr_image' : psnr_image,
                     'ssim_image' : ssim_image, 
+                    'vgg_image' : vgg_image,
+                    'val_loss' : val_loss
             }, epoch)
         #save checkpoint
         path = os.path.join('data', 'checkpoints') 
         if not os.path.exists(path):
             os.makedirs(path)
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = os.path.join(path, f'model_epoch{epoch}_loss{loss:.4f}_{current_time}.pt') 
+        path = os.path.join(path, f'model_epoch{epoch}_loss{loss:.4f}_valloss{val_loss:.4f}_{current_time}.pt') 
         #with open(path, 'w') as file:
         torch.save({
             'epoch': epoch,
@@ -337,7 +353,7 @@ if __name__ == '__main__':
             'loss': loss,
             'global_step': global_step,
             }, path)
-        print(f'Checkpoint saved: {path} (loss: {loss:.4f})')
+        print(f'Checkpoint saved: {path} (loss: {loss:.4f}) (val_loss: {val_loss:.4f})')
         epoch += 1
     print("global_step: ")
     print(global_step)
