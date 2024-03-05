@@ -153,3 +153,20 @@ def cosine_similarity_matrices(A, B):
     B_flat = B.view(1, -1)  # Reshape B to a row tensor
     cos_sim = F.cosine_similarity(A_flat, B_flat, dim=1)
     return cos_sim.item()
+
+def normal_pdf(x, mean, std):
+    # Compute the PDF of the normal distribution
+    return (1 / (math.sqrt(2 * math.pi) * std)) * torch.exp(-((x - mean) ** 2) / (2 * std ** 2))
+
+def create_inverse_normal_pdf2D(rows, cols,mean=0, std=0.1):
+    # Create a grid of coordinates
+    x_coords = torch.linspace(-1, 1, steps=cols)
+    y_coords = torch.linspace(-1, 1, steps=rows)
+    x_grid, y_grid = torch.meshgrid(x_coords, y_coords)
+    
+    # Compute the PDF values for each point
+    pdf_values = normal_pdf(x_grid, mean, std) * normal_pdf(y_grid, mean, std)
+    pdf_values -= pdf_values.min()
+    pdf_values /= pdf_values.max()
+    pdf_values = 1.0 - pdf_values
+    return pdf_values
