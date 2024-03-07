@@ -201,6 +201,66 @@ def prepare_data(hparams):
 
     return train_dataloader, val_dataloader
 
+def prepare_data2(hparams):
+    image_sz = hparams.image_sz
+    crop_width = hparams.crop_width
+    augment = hparams.augment
+    randcrop = hparams.randcrop
+
+    padding = 0
+    val_idx = 3994
+    sf_train_dataset = SceneFlow('train',
+                                 (image_sz + 4 * crop_width,
+                                  image_sz + 4 * crop_width),
+                                 is_training=True,
+                                 randcrop=randcrop, augment=augment, padding=padding,
+                                 singleplane=False)
+    # sf_train_dataset = torch.utils.data.Subset(sf_train_dataset,
+    #                                            range(val_idx, len(sf_train_dataset)))
+
+    sf_val_dataset = SceneFlow('val',
+                               (image_sz + 4 * crop_width,
+                                image_sz + 4 * crop_width),
+                               is_training=False,
+                               randcrop=randcrop, augment=augment, padding=padding,
+                               singleplane=False)
+    # sf_val_dataset = torch.utils.data.Subset(sf_val_dataset, range(val_idx))
+
+    if hparams.mix_dualpixel_dataset:
+        dp_train_dataset = DualPixel('train',
+                                     (image_sz + 4 * crop_width,
+                                      image_sz + 4 * crop_width),
+                                     is_training=True,
+                                     randcrop=randcrop, augment=augment, padding=padding)
+        dp_val_dataset = DualPixel('val',
+                                   (image_sz + 4 * crop_width,
+                                    image_sz + 4 * crop_width),
+                                   is_training=False,
+                                   randcrop=randcrop, augment=augment, padding=padding)
+
+        train_dataset = torch.utils.data.ConcatDataset([dp_train_dataset, sf_train_dataset])
+        val_dataset = torch.utils.data.ConcatDataset([dp_val_dataset, sf_val_dataset])
+
+        n_sf = len(sf_train_dataset)
+        n_dp = len(dp_train_dataset)
+        sample_weights = torch.cat([1. / n_dp * torch.ones(n_dp, dtype=torch.double),
+                                    1. / n_sf * torch.ones(n_sf, dtype=torch.double)], dim=0)
+        sampler = torch.utils.data.WeightedRandomSampler(sample_weights, len(sample_weights))
+
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz, sampler=sampler,
+                                      num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
+        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=hparams.batch_sz,
+                                    num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
+    else:
+        train_dataset = sf_train_dataset
+        val_dataset = sf_val_dataset
+        train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=hparams.batch_sz,
+                                      num_workers=hparams.num_workers, shuffle=True, pin_memory=True)
+        val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=hparams.batch_sz,
+                                    num_workers=hparams.num_workers, shuffle=False, pin_memory=True)
+
+    return train_dataloader, val_dataloader
+
 def training_step(model, samples, batch_idx, device):
         target_images = samples['image'].to(device)
         target_depthmaps = samples['depthmap'].to(device)
@@ -320,7 +380,6 @@ if __name__ == '__main__':
                 ssim_image += val_losses['ssim_image']
                 mae_depthmap_outs.append(mae_depthmap)
                 vgg_image_outs.append(mse_image)
-            val_loss = validation_epoch_end(model, mae_depthmap_outs, vgg_image_outs)
             scaler = 1 / len(val_data_loader)
             mae_depthmap *= scaler
             mse_depthmap *= scaler
@@ -329,6 +388,7 @@ if __name__ == '__main__':
             psnr_image *= scaler
             ssim_image *= scaler
             vgg_image *= scaler
+            val_loss =  mae_depthmap + mae_image
             writer.add_scalars('val_loss', {
                     'mae_depthmap' : mae_depthmap,
                     'mse_depthmap' : mse_depthmap, 
@@ -336,7 +396,6 @@ if __name__ == '__main__':
                     'mse_image' : mse_image,
                     'psnr_image' : psnr_image,
                     'ssim_image' : ssim_image, 
-                    'vgg_image' : vgg_image,
                     'val_loss' : val_loss
             }, epoch)
         #save checkpoint
