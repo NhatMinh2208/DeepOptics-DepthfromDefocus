@@ -518,7 +518,8 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         This function is intend to scale that into the mask resolution.\n
         '''
         # make sure that we always get Amp-mask laid into [0, 1]
-        tanh_mask2D = torch.tanh(self.ampmask2d)
+        #tanh_mask2D = torch.tanh(self.ampmask2d)
+        tanh_mask2D = self.ampmask2d
         new_mask = F.interpolate(tanh_mask2D.unsqueeze(0).unsqueeze(0), size=(self.mask_size, self.mask_size), mode='nearest').squeeze()
         return new_mask
     def radius_sampling(self):
@@ -1037,7 +1038,7 @@ class MixedCamera(RotationallySymmetricCamera):
         r_coord = torch.sqrt(y_coord ** 2 + x_coord ** 2).unsqueeze(0)
         r_grid = r_grid.reshape(1, -1)
         ind = self.find_index(r_grid, r_coord)
-        heightmap11 = utils.helper.cubicspline.interp(r_grid, heightmap1d, r_coord, ind).float()
+        heightmap11 = interp.interp(r_grid, heightmap1d, r_coord, ind).float()
         heightmap = utils.helper.copy_quadruple(heightmap11).squeeze()
         return heightmap
     
