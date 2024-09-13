@@ -7,11 +7,12 @@
 import torch
 import argparse
 import os
-
+import torch.nn.functional as F
 from datasets.dualpixel import DualPixel
 from datasets.sceneflow import SceneFlow
-
-from optics.camera7 import Camera, RotationallySymmetricCamera, AsymmetricMaskRotationallySymmetricCamera, MixedCamera
+import math
+import imageio
+from optics.camera9 import Camera, RotationallySymmetricCamera, AsymmetricMaskRotationallySymmetricCamera, MixedCamera
 def arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Compare different cameras')
     # Specify two camera to compare 
@@ -41,7 +42,8 @@ def arg_parser() -> argparse.ArgumentParser:
     # camera(s) parameters
     #1024
     parser.add_argument('--mask_sz', type=int, default=800) # whatever put in front of sensor (mask) resolution
-    parser.add_argument('--image_sz', type=int, default=256) # sensor resolution (crop batch)
+    # parser.add_argument('--image_sz', type=int, default=256) # sensor resolution (crop batch)
+    parser.add_argument('--image_sz', type=int, default=800)
     parser.add_argument('--full_size', type=int, default=600) # real sensor resolution 
     # physical length (meter)
     parser.add_argument('--mask_diameter', type=float, default=2.5e-3)
@@ -83,6 +85,48 @@ def arg_parser() -> argparse.ArgumentParser:
     parser.add_argument('--debug', default=False, action='store_true')
     parser.add_argument('--checkpoint', type=str, default=None, help='load checkpoint')
     return parser
+
+def dump_images(results: dict, output_dir, cmap):
+    for title, image in results.items():
+        #plt.figure()
+        # normalized term
+        image = image.cpu()
+        if(title == 'psf'):
+            min_value = image.min().item()
+            max_value = image.max().item()
+            image = (image - min_value) / (max_value - min_value)
+        # normalized term
+        # plt.imshow(image, cmap=cmap)
+        # plt.title(title)
+        # #plt.axis('off')  # Hide axes
+        # plt.colorbar()
+        # Define the filename for saving
+        filename = os.path.join(output_dir, f'{title}.png')
+        # Save the image as a file
+        # plt.savefig(filename)
+        # plt.close()
+        
+        # image = Image.fromarray(image.numpy())
+        # image = image.convert("L")
+        imageio.imwrite(filename, image)
+        #imageio.imwrite(filename, image.to(torch.uint8))
+
+def cosine_similarity(tensor1, tensor2):
+    # Ensure the tensors are of the same shape
+    assert tensor1.shape == tensor2.shape, "Tensors must be of the same shape"
+
+    # Compute L2 norms
+    norm1 = tensor1.norm(p=2, dim=1, keepdim=True)
+    norm2 = tensor2.norm(p=2, dim=1, keepdim=True)
+
+    # Normalize the tensors
+    normed_tensor1 = tensor1 / norm1
+    normed_tensor2 = tensor2 / norm2
+
+    # Compute cosine similarity
+    similarity = torch.mm(normed_tensor1, normed_tensor2.t())
+
+    return similarity
 
 def prepare_data(hparams):
     image_sz = hparams.image_sz
@@ -204,14 +248,28 @@ if __name__ == '__main__':
     #camera = MixedCamera(**camera_recipe, requires_grad=optimize_optics)
     camera = AsymmetricMaskRotationallySymmetricCamera(**camera_recipe, requires_grad=optimize_optics)
     #print(camera.heightmap2().shape)
-    psf = camera.get_psf()[0][0].cpu()
-    # #psf = camera.heightmap()
-    # # psf = camera.dump_conv_real[0][8].cpu()
-    plt.imshow(psf, cmap='gray')
-    plt.colorbar()  # Optional: add a color bar to show the intensity scale
-    plt.title('Grayscale Image')
-    plt.axis('off')  # Optional: turn off the axis
-    plt.show()
+
+
+    # psf = camera.get_psf()[0][1].cpu()
+    # dump_h = camera.dump_h.real.cpu()[0][0]
+    # dump_phase = camera.dump_phase_complex.real.cpu()[0][0]
+    # #print(camera.dump_init_phase.cpu().shape)
+    # # #psf = camera.heightmap()
+    # # # psf = camera.dump_conv_real[0][8].cpu()
+    # #print(F.cosine_similarity(camera.dump_heightmap2d[0][0].cpu(), camera.dump_heightmap2d2[0][0].cpu()))
+    # #print(camera.dump_heightmap2d[0][0].cpu() / camera.dump_heightmap2d2[0][0].cpu()) 
+    # plt.imshow(torch.log(psf + 1), cmap='gray')
+    # plt.colorbar()  # Optional: add a color bar to show the intensity scale
+    # plt.title('Grayscale Image')
+    # plt.axis('off')  # Optional: turn off the axis
+    # plt.show()
+
+    dump_images(camera.dump_depth_psf(), './depth_psf_results/test', 'gray')
+    # plt.imshow(dump_phase, cmap='gray')
+    # plt.colorbar()  # Optional: add a color bar to show the intensity scale
+    # plt.title('Grayscale Image')
+    # plt.axis('off')  # Optional: turn off the axis
+    # plt.show()
 
     # psf = camera.dump_conv[0][8].cpu()
     # plt.imshow(psf, cmap='gray')
