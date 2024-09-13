@@ -12,7 +12,7 @@ from datasets.dualpixel import DualPixel
 from datasets.sceneflow import SceneFlow
 import math
 import imageio
-from optics.camera9 import Camera, RotationallySymmetricCamera, AsymmetricMaskRotationallySymmetricCamera, MixedCamera
+from optics.camera8 import Camera, RotationallySymmetricCamera, AsymmetricMaskRotationallySymmetricCamera, MixedCamera
 def arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='Compare different cameras')
     # Specify two camera to compare 
@@ -48,7 +48,8 @@ def arg_parser() -> argparse.ArgumentParser:
     # physical length (meter)
     parser.add_argument('--mask_diameter', type=float, default=2.5e-3)
     parser.add_argument('--sensor_diameter', type=float, default=2.4768e-3)
-    parser.add_argument('--focal_length', type=float, default=50e-3) # f
+    # parser.add_argument('--focal_length', type=float, default=50e-3) # f
+    parser.add_argument('--focal_length', type=float, default=50e-3 / 3 )
     parser.add_argument('--focal_depth', type=float, default=1.7) # d
     
     parser.add_argument('--f_number', type=float, default=20) #use to 
@@ -247,10 +248,11 @@ if __name__ == '__main__':
     camera_recipe['full_size'] = hparams.full_size
     #camera = MixedCamera(**camera_recipe, requires_grad=optimize_optics)
     camera = AsymmetricMaskRotationallySymmetricCamera(**camera_recipe, requires_grad=optimize_optics)
+    #dump_images(camera.dump_depth_psf(), './depth_psf_results/asym3', 'gray')
     #print(camera.heightmap2().shape)
 
 
-    # psf = camera.get_psf()[0][1].cpu()
+    psf = camera.get_psf()[0][8].cpu()
     # dump_h = camera.dump_h.real.cpu()[0][0]
     # dump_phase = camera.dump_phase_complex.real.cpu()[0][0]
     # #print(camera.dump_init_phase.cpu().shape)
@@ -258,14 +260,14 @@ if __name__ == '__main__':
     # # # psf = camera.dump_conv_real[0][8].cpu()
     # #print(F.cosine_similarity(camera.dump_heightmap2d[0][0].cpu(), camera.dump_heightmap2d2[0][0].cpu()))
     # #print(camera.dump_heightmap2d[0][0].cpu() / camera.dump_heightmap2d2[0][0].cpu()) 
-    # plt.imshow(torch.log(psf + 1), cmap='gray')
-    # plt.colorbar()  # Optional: add a color bar to show the intensity scale
-    # plt.title('Grayscale Image')
-    # plt.axis('off')  # Optional: turn off the axis
-    # plt.show()
+    plt.imshow(psf , cmap='gray')
+    plt.colorbar()  # Optional: add a color bar to show the intensity scale
+    plt.title('Grayscale Image')
+    plt.axis('off')  # Optional: turn off the axis
+    plt.show()
 
-    dump_images(camera.dump_depth_psf(), './depth_psf_results/test', 'gray')
-    # plt.imshow(dump_phase, cmap='gray')
+    # sth = camera.dump_depth_psf()
+    # plt.imshow(camera.dump_PSF.cpu()[0][8], cmap='gray')
     # plt.colorbar()  # Optional: add a color bar to show the intensity scale
     # plt.title('Grayscale Image')
     # plt.axis('off')  # Optional: turn off the axis

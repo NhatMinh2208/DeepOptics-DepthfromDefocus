@@ -435,9 +435,10 @@ class RotationallySymmetricCamera(Camera):
         return psf1d_out_of_fov.sum(), psf1d_out_of_fov.max()    
     
     def test_heightmap_diag(self):
-        R1 = self.focal_length / 2
+        R1 = self.focal_length / 2 
         min_z = 1e10
         Height = self.mask_diameter
+        #Height = self.mask_diameter / math.sqrt(2)
         half_mask_size = self.mask_size // 2
         heightmap1d = torch.zeros(half_mask_size)
         for i in range(half_mask_size): 
@@ -821,6 +822,7 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
     def psf2d(self, H, scene_distances, modulate_phase=torch.tensor(True)):
         #rho_grid1, rho_sampling1 = self.pre_sampling()
         heightmap1d_ = self.test_heightmap_diag()
+        #heightmap1d_ = torch.zeros(self.mask_size // 2).to(self.device) 
         heightmap1d_ = self.mask2sensor_scale(heightmap1d_)
         rho_grid1, rho_sampling1 = self.make_grid_from_diag(self.camera_pixel_pitch, self.image_size[0])
         rho_index = self.find_index2(rho_grid1, rho_sampling1)
@@ -835,7 +837,7 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         phasedelay_heightmap2d = self.dump_heightmap2d
         
         defocus_phase = self.defocus_factor(self.scene_distances)
-        print(defocus_phase.shape)
+        #print(defocus_phase.shape)
         self.dump_defocus_phase = defocus_phase
         defocus_amplitude = amplitude = torch.ones_like(defocus_phase).to(self.device)
         self.dump_defocus_amplitude = defocus_amplitude
