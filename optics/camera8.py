@@ -938,7 +938,8 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         # psf_rd = F.relu(utils.interp.interp(rho_grid, psf1d, rho_sampling, ind).float())
         # psf_rd = psf_rd.reshape(self.n_wl, self.n_depths, size[0] // 2, size[1] // 2)
         # return utils.helper.copy_quadruple(psf_rd)
-        return self.crop_last_two_dimensions(self.psf1d(H, scene_distances, modulate_phase), self.image_size[0], self.image_size[1]) 
+        return self.psf2d(None, None, modulate_phase)
+        #return self.crop_last_two_dimensions(self.psf1d(H, scene_distances, modulate_phase), self.image_size[0], self.image_size[1]) 
     
     def psf_at_camera(self, size=None, modulate_phase=torch.tensor(True), is_training=torch.tensor(False)):
         device = self.device
