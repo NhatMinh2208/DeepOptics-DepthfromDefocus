@@ -483,6 +483,48 @@ class RotationallySymmetricCamera(Camera):
         heightmap1d = heightmap1d - min_z
         #return heightmap1d
         return heightmap1d.to(self.device)
+    
+    def test_heightmap_diag_fresnel(self, focal_length):
+        R1 = focal_length / 2
+        min_z = 1e10
+        Height = self.mask_diameter
+        half_mask_size = self.mask_size // 2
+        heightmap1d = torch.zeros(half_mask_size)
+        for i in range(half_mask_size): 
+            x =  math.sqrt(2) * i * Height / self.mask_size
+            z = math.sqrt(R1 * R1 - x * x)
+            min_z = min(min_z, z)
+            heightmap1d[i] = z
+        modified_tensor = heightmap1d.clone()
+        # Calculate the total length of the tensor
+        total_length = len(heightmap1d)
+        # Initialize the starting index
+        start_idx = 0
+        # Iterate through the number of partitions
+        for i in range(5):  # 9 iterations for 10 partitions
+            # Calculate the size of the current partition (1/3 of remaining length)
+            partition_size = (total_length - start_idx) // 3
+            
+            # Define the end index for the current partition
+            end_idx = start_idx + partition_size
+            
+            # Process the partition, excluding the last partition
+            if end_idx < total_length:
+                partition = modified_tensor[start_idx:end_idx]
+                min_value = partition.min()
+                modified_tensor[start_idx:end_idx] -= min_value
+                
+            # Update the starting index for the next partition
+            start_idx = end_idx
+
+        partition_size = total_length - start_idx    
+        end_idx = start_idx + partition_size
+        if end_idx <= total_length:
+            partition = modified_tensor[start_idx:end_idx]
+            min_value = partition.min()
+            modified_tensor[start_idx:end_idx] -= min_value
+        
+        return modified_tensor.to(self.device)
     def depth_levels(self):
         return utils.helper.ips_to_metric(torch.linspace(0, 1, steps=self.n_depths), self.min_depth, self.max_depth)
     
@@ -842,7 +884,8 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
         
     def psf2d(self, H, scene_distances, modulate_phase=torch.tensor(True)):
         #rho_grid1, rho_sampling1 = self.pre_sampling()
-        heightmap1d_ = self.test_heightmap_diag(1.5569331691104185)
+        heightmap1d_ = self.heightmap1d_
+        #heightmap1d_ = self.test_heightmap_diag(1.5)
         #heightmap1d_ = torch.zeros(self.mask_size // 2).to(self.device)
         #heightmap1d_ = self.test_heightmap_diag(1.5) 
         heightmap1d_ = self.mask2sensor_scale(heightmap1d_)
@@ -852,7 +895,7 @@ class AsymmetricMaskRotationallySymmetricCamera(RotationallySymmetricCamera):
 
         phasedelay_heightmap2d = utils.helper.heightmap_to_phase(heightmap1d_.unsqueeze(0),  # add wavelength dim
                                               wavelengths,
-                                              1.5569331691104185)
+                                              1.5)
         phasedelay_heightmap2d = utils.helper.copy_quadruple(interp.linterp2(rho_grid1, (phasedelay_heightmap2d), rho_sampling1, rho_index))
         #self.dump_heightmap2d = phasedelay_heightmap2d / math.sqrt(2)
         self.dump_heightmap2d = phasedelay_heightmap2d 
